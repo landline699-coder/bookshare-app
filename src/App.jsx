@@ -1,12 +1,11 @@
 /**
- * 📚 BookShare Pro - Ultimate Stable Version
+ * 📚 BookShare Pro - Ultimate Stable Version (Performance & Bug Fixes)
  * Updates:
- * - Fixed: 'bookImageUrl' and 'notifications' state definition errors.
- * - Fixed: Icon ReferenceErrors (Heart, Loader2, etc.).
- * - Fixed: Scope errors for 'handleLogout'.
- * - Performance: useMemo optimization for smooth book browsing.
- * - Privacy: Hide mobile numbers from others while keeping them visible to Admin.
- * - Security: MPIN based Login & Registration.
+ * - Fixed: 'handleAddBook' now clears all form fields after success.
+ * - Fixed: Added publishing state to prevent double book entries.
+ * - Optimized: Image compression fallback for older mobile devices.
+ * - Security: MPIN based Login & Registration with strict 10-digit check.
+ * - Admin Hub: Full transparency and God Mode deletion.
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -62,6 +61,7 @@ const compressImage = (base64Str, maxWidth = 800, quality = 0.7) => {
       ctx.drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
+    img.onerror = () => resolve(base64Str); // Fallback if compression fails
   });
 };
 
@@ -81,7 +81,7 @@ const calculateDaysDiff = (dateStr) => {
 };
 
 export default function App() {
-  // --- STATE DEFINITIONS (Ensured all exist) ---
+  // --- STATE DEFINITIONS ---
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null); 
   const [appMode, setAppMode] = useState(null); 
@@ -97,7 +97,8 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [showMpin, setShowMpin] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Global loading for compression/database
+  const [isPublishing, setIsPublishing] = useState(false); // Specifically for adding books
 
   // Form Field States
   const [tempName, setTempName] = useState(''); 
@@ -107,11 +108,14 @@ export default function App() {
   const [tempIsPrivate, setTempIsPrivate] = useState(false);
   const [loginMobile, setLoginMobile] = useState('');
   const [loginMpin, setLoginMpin] = useState('');
+  
+  // Book Add Form Fields
   const [newBookTitle, setNewBookTitle] = useState('');
   const [newBookAuthor, setNewBookAuthor] = useState('');
   const [newBookCategory, setNewBookCategory] = useState('Maths');
   const [newBookRemark, setNewBookRemark] = useState(''); 
   const [bookImageUrl, setBookImageUrl] = useState('');
+
   const [borrowMsg, setBorrowMsg] = useState('');
   const [borrowMobile, setBorrowMobile] = useState(''); 
   const [newPagesRead, setNewPagesRead] = useState('');
@@ -139,7 +143,7 @@ export default function App() {
 
   const fileInputRef = useRef(null);
 
-  // 1. Auth Init & Profile Handling
+  // 1. Auth Init
   useEffect(() => {
     const initAuth = async () => {
       try { await signInAnonymously(auth); } catch (e) { console.error(e); }
@@ -252,19 +256,42 @@ export default function App() {
     e.preventDefault();
     if (!newBookTitle || !user) return;
     try {
+      setIsPublishing(true);
       const today = new Date().toISOString();
       const nameTag = `${profile?.name || 'Admin'}#${getShortId(user.uid)}`;
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'books'), {
-        type: appMode, title: newBookTitle, author: newBookAuthor, category: newBookCategory,
-        remark: newBookRemark, imageUrl: bookImageUrl, currentOwner: nameTag, 
-        ownerClass: profile?.studentClass || 'Staff', ownerId: user.uid, contact: profile?.mobile || '9999999999', 
-        isPrivate: profile?.isPrivate || false, since: today, transferPending: false, handoverStatus: 'available',
-        waitlist: [], readingProgress: { started: false, pagesRead: 0, lastUpdated: today },
-        history: [{ owner: profile?.name, startDate: today, action: 'Listed' }],
+        type: appMode, 
+        title: newBookTitle, 
+        author: newBookAuthor || 'Unknown', 
+        category: newBookCategory,
+        remark: newBookRemark, 
+        imageUrl: bookImageUrl, 
+        currentOwner: nameTag, 
+        ownerClass: profile?.studentClass || 'Staff', 
+        ownerId: user.uid, 
+        contact: profile?.mobile || '9999999999', 
+        isPrivate: profile?.isPrivate || false, 
+        since: today, 
+        handoverStatus: 'available',
+        waitlist: [], 
+        readingProgress: { started: false, pagesRead: 0, lastUpdated: today },
+        history: [{ owner: nameTag, startDate: today, action: 'Listed' }],
         createdAt: serverTimestamp()
       });
-      setIsAddingBook(false); setNewBookTitle(''); setBookImageUrl('');
-    } catch (err) { console.error(err); }
+      
+      // Full State Reset
+      setIsAddingBook(false);
+      setNewBookTitle('');
+      setNewBookAuthor('');
+      setNewBookCategory('Maths');
+      setNewBookRemark('');
+      setBookImageUrl('');
+    } catch (err) { 
+      console.error(err);
+      alert("Error adding book. Please check connection.");
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const handleRequestWaitlist = async (e) => {
@@ -361,8 +388,6 @@ export default function App() {
     try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id)); setSelectedBook(null); setShowDeleteConfirm(false); } catch (e) { console.error(e); }
   };
 
-  // --- UI RENDER ---
-
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24 selection:bg-blue-100 overflow-x-hidden">
       
@@ -386,7 +411,7 @@ export default function App() {
             {authView === 'login' ? (
               <form onSubmit={handleLogin} className="space-y-4 text-left">
                 <div><label className="text-[10px] font-black uppercase text-slate-400 ml-4 mb-2 block tracking-widest">Mobile Number</label><input required type="tel" maxLength={10} className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-bold border-2 border-slate-100 focus:border-blue-600 outline-none" value={loginMobile} onChange={e => handleNumericInput(e.target.value, setLoginMobile, 10)} /></div>
-                <div><label className="text-[10px] font-black uppercase text-slate-400 ml-4 mb-2 block tracking-widest">4-Digit PIN</label><div className="relative"><Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input required type={showMpin ? "text" : "password"} maxLength={4} className="w-full pl-14 pr-16 py-5 bg-slate-50 rounded-[2rem] font-black text-2xl border-2 border-slate-100 focus:border-blue-600 outline-none tracking-[0.5em]" value={loginMpin} onChange={e => handleNumericInput(e.target.value, setLoginMpin, 4)} /><button type="button" onClick={() => setShowMpin(!showMpin)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 p-2">{showMpin ? <EyeOff size={20}/> : <Eye size={20}/>}</button></div></div>
+                <div><label className="text-[10px] font-black uppercase text-slate-400 ml-4 mb-2 block tracking-widest">4-Digit PIN</label><div className="relative"><Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input required type={showMpin ? "text" : "password"} maxLength={4} placeholder="••••" className="w-full pl-14 pr-16 py-5 bg-slate-50 rounded-[2rem] font-black text-2xl border-2 border-slate-100 focus:border-blue-600 outline-none tracking-[0.5em]" value={loginMpin} onChange={e => handleNumericInput(e.target.value, setLoginMpin, 4)} /><button type="button" onClick={() => setShowMpin(!showMpin)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 p-2">{showMpin ? <EyeOff size={20}/> : <Eye size={20}/>}</button></div></div>
                 <button type="submit" disabled={isLoading} className="w-full py-5 rounded-[2rem] font-black uppercase text-xs shadow-2xl mt-6 bg-blue-600 text-white active:scale-95 shadow-blue-100 transition-all flex items-center justify-center gap-3">{isLoading ? <Loader2 className="animate-spin"/> : "Access Account"}</button>
               </form>
             ) : (
@@ -413,7 +438,7 @@ export default function App() {
         <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
           <div className="mb-12 flex flex-col items-center">
             <div className="relative mx-auto w-24 h-24 mb-6"><div className="bg-blue-600 w-24 h-24 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-blue-200 animate-in slide-in-from-top duration-700"><BookOpen className="text-white w-12 h-12" /></div></div>
-            <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-3">BookShare</h1>
+            <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-3 text-center">BookShare</h1>
             <div className="bg-slate-100 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-400">@{profile?.name} {isAdminAuth && "(ADMIN)"}</div>
             <button onClick={() => setShowLogoutConfirm(true)} className="text-red-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2 mt-4 transition-colors"><LogOut size={14} /> Switch Account</button>
           </div>
@@ -443,11 +468,11 @@ export default function App() {
             </div>
           )}
 
-          <main className="max-w-5xl mx-auto p-4 pb-24">
+          <main className="max-w-5xl mx-auto p-4 pb-24 text-center">
             {currentTab === 'inbox' && isAdminAuth ? (
               <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
-                <div className="flex justify-between items-center bg-red-50 p-6 rounded-[2.5rem] border border-red-100 shadow-sm text-left"><div><h2 className="text-xl font-black text-red-900">Admin Support Inbox</h2><p className="text-[9px] font-bold text-red-600 uppercase tracking-widest">Complaints & Suggestions</p></div><button onClick={handleExportCSV} className="bg-red-600 text-white p-4 rounded-2xl shadow-xl active:scale-95 transition-all"><Download size={20}/></button></div>
-                {supportMessages.map(msg => <div key={msg.id} className="p-6 bg-white border border-slate-100 rounded-[2.5rem] shadow-sm text-left"><div className="text-sm font-black">@{msg.senderName} (Class {msg.senderClass})</div><p className="mt-4 text-slate-700 bg-slate-50 p-5 rounded-[2rem] italic leading-relaxed">"{msg.message}"</p></div>)}
+                <div className="flex justify-between items-center bg-red-50 p-6 rounded-[2.5rem] border border-red-100 shadow-sm text-left"><div><h2 className="text-xl font-black text-red-900">Admin Support Inbox</h2><p className="text-[9px] font-bold text-red-600 uppercase tracking-widest text-left">Complaints & Suggestions</p></div><button onClick={handleExportCSV} className="bg-red-600 text-white p-4 rounded-2xl shadow-xl active:scale-95 transition-all"><Download size={20}/></button></div>
+                {supportMessages.map(msg => <div key={msg.id} className="p-6 bg-white border border-slate-100 rounded-[2.5rem] shadow-sm text-left"><div className="text-sm font-black">@{msg.senderName} (Class {msg.senderClass})</div><p className="mt-4 text-slate-700 bg-slate-50 p-5 rounded-[2rem] italic leading-relaxed text-left">"{msg.message}"</p></div>)}
                 {supportMessages.length === 0 && <div className="text-center py-20 text-slate-300 font-black uppercase text-xs italic">Inbox is clear</div>}
               </div>
             ) : (
@@ -478,7 +503,7 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[130] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300 text-left">
              <div className="flex justify-between items-center mb-8"><div className="flex items-center gap-4 text-left"><div className="bg-blue-600 p-4 rounded-3xl text-white shadow-xl shadow-blue-100"><Headset size={28} /></div><div className="text-left"><h2 className="text-2xl font-black">Admin Support</h2><p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Secure Student Helpdesk</p></div></div><button onClick={() => setIsReportingIssue(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"><X size={20}/></button></div>
-             <form onSubmit={handleSendReport} className="space-y-6 text-left"><textarea required placeholder="Apni dikkat ya suggestion batayein..." className="w-full h-48 p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] font-bold text-sm outline-none focus:border-blue-600 transition-all shadow-inner resize-none text-left" value={reportText} onChange={e => setReportText(e.target.value)} /><button type="submit" className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black uppercase text-xs shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"><Send size={18}/> Send to Admin</button></form>
+             <form onSubmit={handleSendReport} className="space-y-6 text-left text-left"><textarea required placeholder="Apni dikkat ya suggestion batayein..." className="w-full h-48 p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] font-bold text-sm outline-none focus:border-blue-600 transition-all shadow-inner resize-none text-left" value={reportText} onChange={e => setReportText(e.target.value)} /><button type="submit" className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black uppercase text-xs shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"><Send size={18}/> Send to Admin</button></form>
           </div>
         </div>
       )}
@@ -488,39 +513,39 @@ export default function App() {
           <div className={`bg-white w-full max-w-lg rounded-t-[3.5rem] sm:rounded-[3.5rem] overflow-hidden animate-in slide-in-from-bottom duration-500 my-auto shadow-2xl ${isAdminAuth ? 'border-4 border-red-100' : ''} text-left`}>
             <div className="h-64 relative bg-slate-200 text-left">
               {selectedBook.imageUrl ? <img src={selectedBook.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black uppercase text-xs">No Cover</div>}
-              <div className="absolute top-6 right-6 flex gap-2">{(isAdminAuth || (selectedBook.ownerId === user.uid && selectedBook.history.length === 1)) && <button onClick={() => setShowDeleteConfirm(true)} className="bg-red-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-all"><Trash2 size={20} /></button>}<button onClick={() => setSelectedBook(null)} className="bg-black/20 backdrop-blur-md text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"><X size={20} /></button></div>
+              <div className="absolute top-6 right-6 flex gap-2">{(isAdminAuth || (selectedBook.ownerId === user.uid && selectedBook.history.length === 1)) && <button onClick={() => setShowDeleteConfirm(true)} className="bg-red-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-all text-center"><Trash2 size={20} /></button>}<button onClick={() => setSelectedBook(null)} className="bg-black/20 backdrop-blur-md text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"><X size={20} /></button></div>
             </div>
             <div className="p-8 bg-white max-h-[90dvh] sm:max-h-[70vh] overflow-y-auto no-scrollbar text-left">
               <h2 className="text-2xl font-black mb-1 text-left">{selectedBook.title}</h2>
               <div className="text-slate-400 font-bold text-xs mb-8 uppercase tracking-widest text-left flex items-center gap-2"><div className="w-4 h-0.5 bg-slate-200"></div> by {selectedBook.author}</div>
               {selectedBook.remark && <div className="mb-8 bg-blue-50/50 p-6 rounded-[2.5rem] border border-blue-100 italic text-slate-700 leading-relaxed text-left relative overflow-hidden group shadow-sm"><Quote size={40} className="absolute -right-2 -top-2 text-blue-100 -rotate-12 group-hover:rotate-0 transition-transform duration-700"/>"{selectedBook.remark}"</div>}
-              <div className="bg-slate-50 p-6 rounded-[3rem] border border-slate-100 flex items-center gap-4 shadow-sm text-left mb-8"><div className={`p-3 rounded-2xl ${isAdminAuth ? 'bg-red-100 text-red-600' : 'bg-white text-blue-600 shadow-sm'}`}><Phone size={20}/></div><div className="text-left text-sm font-black tracking-widest text-slate-800">{(isAdminAuth || !selectedBook.isPrivate || selectedBook.ownerId === user.uid) ? selectedBook.contact : <span className="italic flex items-center gap-2 text-slate-400 font-bold"><EyeOff size={14}/> Hidden Number</span>}</div></div>
+              <div className="bg-slate-50 p-6 rounded-[3rem] border border-slate-100 flex items-center gap-4 shadow-sm text-left mb-8"><div className={`p-3 rounded-2xl ${isAdminAuth ? 'bg-red-100 text-red-600' : 'bg-white text-blue-600 shadow-sm'}`}><Phone size={20}/></div><div className="text-left text-sm font-black tracking-widest text-slate-800">{(isAdminAuth || !selectedBook.isPrivate || selectedBook.ownerId === user.uid) ? selectedBook.contact : <span className="italic flex items-center gap-2 text-slate-400 font-bold text-left"><EyeOff size={14}/> Hidden Number</span>}</div></div>
               <div className="grid grid-cols-2 gap-4 mb-8 text-left">
-                <div className="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 text-left shadow-sm"><div className="text-[8px] font-black uppercase text-slate-400 mb-1">Class</div><div className="font-black text-sm flex items-center gap-2"><GraduationCap size={16} className="text-blue-600" /> {selectedBook.ownerClass}</div></div>
-                <div className="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 text-left shadow-sm"><div className="text-[8px] font-black uppercase text-slate-400 mb-1">Held For</div><div className="font-black text-sm flex items-center gap-2"><Clock size={16} className="text-emerald-600" /> {calculateDaysDiff(selectedBook.since)} Days</div></div>
+                <div className="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 text-left shadow-sm"><div className="text-[8px] font-black uppercase text-slate-400 mb-1 text-left">Class</div><div className="font-black text-sm flex items-center gap-2 text-left"><GraduationCap size={16} className="text-blue-600" /> {selectedBook.ownerClass}</div></div>
+                <div className="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 text-left shadow-sm"><div className="text-[8px] font-black uppercase text-slate-400 mb-1 text-left">Held For</div><div className="font-black text-sm flex items-center gap-2 text-left"><Clock size={16} className="text-emerald-600" /> {calculateDaysDiff(selectedBook.since)} Days</div></div>
               </div>
               {(user.uid === selectedBook.ownerId || isAdminAuth) && selectedBook.waitlist?.length > 0 && selectedBook.handoverStatus === 'available' && (
                 <div className={`mt-8 space-y-4 border-2 p-6 rounded-[2.5rem] shadow-sm text-left ${isAdminAuth ? 'bg-red-50/20 border-red-100' : 'bg-blue-50/20 border-blue-100'}`}>
-                   <p className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-[0.2em] flex items-center gap-2"><Users size={16}/> Student Requests ({selectedBook.waitlist.length})</p>
-                   {selectedBook.waitlist.map((req, i) => <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 flex justify-between items-center shadow-sm"><div className="text-left"><div className="text-sm font-black">@{req.name}</div><div className="text-[8px] font-bold text-slate-400 uppercase mt-1">Class: {req.studentClass} | {req.contact}</div></div><button onClick={() => handleApproveFromWaitlist(req)} className="bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95 transition-all">Approve</button></div>)}
+                   <p className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-[0.2em] flex items-center gap-2 text-left"><Users size={16}/> Student Requests ({selectedBook.waitlist.length})</p>
+                   {selectedBook.waitlist.map((req, i) => <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 flex justify-between items-center shadow-sm text-left"><div className="text-left"><div className="text-sm font-black text-left">@{req.name}</div><div className="text-[8px] font-bold text-slate-400 uppercase mt-1 text-left">Class: {req.studentClass} | {req.contact}</div></div><button onClick={() => handleApproveFromWaitlist(req)} className="bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95 transition-all text-center">Approve</button></div>)}
                 </div>
               )}
-              {selectedBook.handoverStatus === 'confirming_receipt' && selectedBook.pendingRequesterId === user.uid && <button onClick={handleConfirmReceipt} className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black uppercase mt-8 shadow-xl animate-bounce tracking-widest text-xs">Confirm Receipt</button>}
-              {!isAdminAuth && user.uid !== selectedBook.ownerId && !selectedBook.waitlist?.some(r => r.uid === user.uid) && <button onClick={() => { setBorrowMobile(profile?.mobile || ''); setIsRequestingTransfer(true); }} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase mt-8 flex items-center justify-center gap-3 shadow-2xl active:scale-95 shadow-blue-100 tracking-widest text-xs"><Send size={18} /> Request Borrow</button>}
+              {selectedBook.handoverStatus === 'confirming_receipt' && selectedBook.pendingRequesterId === user.uid && <button onClick={handleConfirmReceipt} className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black uppercase mt-8 shadow-xl animate-bounce tracking-widest text-xs text-center">Confirm Receipt</button>}
+              {!isAdminAuth && user.uid !== selectedBook.ownerId && !selectedBook.waitlist?.some(r => r.uid === user.uid) && <button onClick={() => { setBorrowMobile(profile?.mobile || ''); setIsRequestingTransfer(true); }} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase mt-8 flex items-center justify-center gap-3 shadow-2xl active:scale-95 shadow-blue-100 tracking-widest text-xs text-center"><Send size={18} /> Request Borrow</button>}
             </div>
           </div>
         </div>
       )}
 
-      {/* OTHER UTILITY MODALS (LOGOUT, ADMIN, ADD, etc.) */}
+      {/* LOGOUT CONFIRMATION */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-6 text-center text-left">
-          <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in-95 text-left">
+          <div className="bg-white w-full max-sm:w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in-95 text-left text-center">
             <div className="bg-red-50 w-24 h-24 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 text-red-600 shadow-xl"><LogOut size={48} /></div>
-            <h2 className="text-3xl font-black mb-3 text-center tracking-tight">Switch Account?</h2>
-            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-10 text-center leading-relaxed">Sign out of current profile.</p>
-            <div className="flex gap-4 mt-8">
-              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-4 font-black text-slate-400 text-xs uppercase tracking-widest">Stay</button>
+            <h2 className="text-3xl font-black mb-3 text-center tracking-tight">Logout?</h2>
+            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-10 text-center leading-relaxed">Identity on this device will be cleared. Login again with your 10-digit number & MPIN.</p>
+            <div className="flex gap-4 mt-8 text-center">
+              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-4 font-black text-slate-400 text-xs text-center uppercase tracking-widest">Stay</button>
               <button onClick={handleLogout} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 transition-all text-left text-center">Logout</button>
             </div>
           </div>
@@ -531,13 +556,10 @@ export default function App() {
       <button onDoubleClick={() => setIsAdminModeModal(true)} className="fixed bottom-0 left-0 w-16 h-16 opacity-0 z-[100]"></button>
       {isAdminModeModal && (
         <div className="fixed inset-0 bg-black/95 z-[150] flex items-center justify-center p-6 backdrop-blur-xl">
-           <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl text-center animate-in zoom-in-95">
+           <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl text-center">
                <ShieldAlert size={48} className="mx-auto mb-6 text-red-600 shadow-lg shadow-red-100" />
                <h2 className="text-3xl font-black mb-2 tracking-tight">Admin Key</h2>
-               <form onSubmit={handleAdminVerify} className="space-y-5">
-                 <input type="password" placeholder="Key" className="w-full p-6 bg-slate-100 rounded-3xl font-black text-center text-2xl outline-none focus:border-red-600 border-2 border-transparent transition-all shadow-inner" value={adminPassAttempt} onChange={e => setAdminPassAttempt(e.target.value)} />
-                 <button type="submit" className="w-full bg-red-600 text-white py-5 rounded-[2rem] font-black uppercase text-xs shadow-2xl active:scale-95 transition-all text-center">Unlock Root Access</button>
-               </form>
+               <form onSubmit={handleAdminVerify} className="space-y-5 text-center"><input type="password" placeholder="Key" className="w-full p-6 bg-slate-100 rounded-3xl font-black text-center text-2xl outline-none focus:border-red-600 border-2 border-transparent transition-all shadow-inner text-center" value={adminPassAttempt} onChange={e => setAdminPassAttempt(e.target.value)} /><button type="submit" className="w-full bg-red-600 text-white py-5 rounded-[2rem] font-black uppercase text-xs shadow-2xl active:scale-95 transition-all text-center">Unlock Root Access</button></form>
                <button onClick={()=>setIsAdminModeModal(false)} className="mt-8 text-[10px] font-black uppercase text-slate-300 text-center">Cancel</button>
             </div>
         </div>
@@ -550,14 +572,16 @@ export default function App() {
             <div className="flex justify-between items-center mb-8 text-left"><h2 className="text-2xl font-black tracking-tight text-left">List a Book</h2><button type="button" onClick={() => setIsAddingBook(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all"><X size={20}/></button></div>
             <div className="space-y-5 text-left">
               <div onClick={() => !isLoading && fileInputRef.current.click()} className="aspect-video bg-slate-50 border-4 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden group hover:border-blue-200 transition-all relative">
-                {isLoading && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10 font-black uppercase text-[10px] animate-pulse">Processing...</div>}
-                {bookImageUrl ? <img src={bookImageUrl} className="w-full h-full object-cover" /> : <><Camera size={48} className="text-slate-200 mb-2 group-hover:text-blue-300 transition-colors" /><div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Add Book Photo</div></>}<input type="file" ref={fileInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleImageChange} />
+                {(isLoading || isPublishing) && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10 font-black uppercase text-[10px] animate-pulse">Processing...</div>}
+                {bookImageUrl ? <img src={bookImageUrl} className="w-full h-full object-cover" /> : <><Camera size={48} className="text-slate-200 mb-2 group-hover:text-blue-300 transition-colors" /><div className="text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Add Book Photo</div></>}<input type="file" ref={fileInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleImageChange} />
               </div>
-              <input required placeholder="Book Title" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-600 transition-all shadow-sm text-left" value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} />
-              <input placeholder="Author Name" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-600 transition-all shadow-sm text-left" value={newBookAuthor} onChange={e => setNewBookAuthor(e.target.value)} />
-              <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black uppercase text-[10px] outline-none shadow-sm text-left" value={newBookCategory} onChange={e => setNewBookCategory(e.target.value)}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
-              <textarea placeholder="Condition, advice, etc." className="w-full h-32 p-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-bold text-sm outline-none focus:border-blue-600 resize-none transition-all shadow-sm text-left shadow-inner" value={newBookRemark} onChange={e => setNewBookRemark(e.target.value)} />
-              <button type="submit" disabled={isLoading} className={`w-full py-5 rounded-[2rem] font-black uppercase text-xs text-white shadow-2xl active:scale-95 transition-all text-center ${appMode === 'sharing' ? 'bg-blue-600 shadow-blue-100' : 'bg-rose-600 shadow-rose-100'} disabled:opacity-50`}>Publish Listing</button>
+              <input required placeholder="Book Title" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-600 transition-all shadow-sm text-left shadow-inner" value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} />
+              <input placeholder="Author Name" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-600 transition-all shadow-sm text-left shadow-inner" value={newBookAuthor} onChange={e => setNewBookAuthor(e.target.value)} />
+              <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black uppercase text-[10px] outline-none shadow-sm text-left shadow-inner" value={newBookCategory} onChange={e => setNewBookCategory(e.target.value)}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+              <textarea placeholder="Condition, advice, or note..." className="w-full h-32 p-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-bold text-sm outline-none focus:border-blue-600 resize-none transition-all shadow-sm text-left shadow-inner" value={newBookRemark} onChange={e => setNewBookRemark(e.target.value)} />
+              <button type="submit" disabled={isLoading || isPublishing} className={`w-full py-5 rounded-[2rem] font-black uppercase text-xs text-white shadow-2xl active:scale-95 transition-all text-center ${appMode === 'sharing' ? 'bg-blue-600 shadow-blue-100' : 'bg-rose-600 shadow-rose-100'} disabled:opacity-50`}>
+                {isPublishing ? "Publishing..." : "Publish Listing"}
+              </button>
             </div>
           </form>
         </div>
@@ -572,7 +596,7 @@ export default function App() {
                 <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg shadow-blue-100"><Megaphone size={24} /></div>
                 <div className="text-left"><h2 className="text-xl font-black text-left tracking-tight">Community Board</h2><div className="text-[9px] font-black uppercase text-slate-400 tracking-widest text-left">Public Chat</div></div>
               </div>
-              <button onClick={() => setShowCommunityBoard(false)} className="bg-slate-100 p-2.5 rounded-xl hover:bg-slate-200 transition-colors"><X size={20} /></button>
+              <button onClick={() => setShowCommunityBoard(false)} className="bg-slate-100 p-2.5 rounded-xl hover:bg-slate-200 transition-colors text-center"><X size={20} /></button>
             </div>
             <div className="flex-grow overflow-y-auto p-6 space-y-4 no-scrollbar bg-slate-50/30 text-left">
               {suggestions.map(s => (
@@ -583,6 +607,7 @@ export default function App() {
                   </div>
                   <p className="text-sm font-bold text-slate-700 leading-relaxed italic text-left">"{s.message}"</p>
                   <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-left">
+                     <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black uppercase text-slate-400 text-center">{s.userName?.[0]}</div>
                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">@{s.userName} (Class {s.userClass})</div>
                   </div>
                 </div>
@@ -591,6 +616,20 @@ export default function App() {
             </div>
             <div className="p-6 border-t border-slate-100 bg-white text-left text-center">
               <button onClick={() => setIsAddingSuggestion(true)} className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black uppercase text-xs shadow-2xl active:scale-95 transition-all text-center">Post Public Message</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-6 text-center text-left">
+          <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in-95 text-left text-center">
+            <div className="bg-red-50 w-24 h-24 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 text-red-600 shadow-xl"><Trash2 size={48} /></div>
+            <h2 className="text-3xl font-black mb-3 text-center tracking-tight">Delete?</h2>
+            <div className="flex gap-4 mt-8 text-center">
+              <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-4 font-black text-slate-400 text-xs text-center uppercase tracking-widest">Keep</button>
+              <button onClick={handleDeleteBook} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 shadow-red-100 transition-all text-center">Delete</button>
             </div>
           </div>
         </div>
