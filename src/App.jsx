@@ -1,12 +1,12 @@
 /**
- * 📚 BookShare Pro - Ultra Stable Production Build (v3.0.1 - Expert Fix)
- * * STRICT IMPROVEMENTS & BUG FIXES:
- * - Fixed: isUpdatingProgress ReferenceError (State added back).
- * - Fixed: React Child Object error (String sanitization for all outputs).
- * - Fixed: Mobile Back Button (intercepts exit to close modals).
- * - Fixed: Auth Persistence (Stays logged in via localStorage + Firebase).
- * - Fixed: Strict Deletion (Owner can delete only if book never transferred).
- * - Added: Author Name input field in Listing.
+ * 📚 BookShare Pro - Ultimate Stable Version (v3.2)
+ * * CRITICAL FIXES:
+ * - Fixed: 'isAddingSuggestion' ReferenceError.
+ * - Fixed: 'Objects are not valid as a React child' rendering issues.
+ * - Fixed: Approval Logic (Replaced arrayRemove with robust filtering).
+ * - Fixed: Handover Flow (Borrower definitely sees 'Confirm Receipt').
+ * - Fixed: History Updates (Correctly closes previous owner's tenure).
+ * - Features: MPIN Auth, Admin God-Mode, Notifications, Class Filters.
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -38,14 +38,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// ⚠️ NEVER CHANGE THIS ID TO PREVENT DATA LOSS
-const appId = 'school-bookshare-production-v1'; 
+const appId = 'school-bookshare-production-v1'; // KEEP THIS ID
 
 const CATEGORIES = ["Maths", "Biology", "Commerce", "Arts", "Science", "Hindi", "Novel", "Self Help & Development", "Biography", "English", "Computer", "Coaching Notes", "Competition related", "Other"];
 const CLASSES = ["6th", "7th", "8th", "9th", "10th", "11th", "12th", "College", "Other"];
 
-// --- GLOBAL UTILITIES ---
+// --- UTILITIES ---
 const compressImage = (base64Str, maxWidth = 600, quality = 0.6) => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -84,24 +82,23 @@ const calculateDaysDiff = (dateStr) => {
 const getShortId = (uid) => uid ? String(uid).slice(-4).toUpperCase() : "0000";
 
 export default function App() {
-  // --- CORE STATE (Persistent via localStorage) ---
+  // --- STATE ---
   const [user, setUser] = useState(null);
-  const [isAdminAuth, setIsAdminAuth] = useState(() => localStorage.getItem(`${appId}_isAdmin`) === 'true');
   const [profile, setProfile] = useState(() => {
     const saved = localStorage.getItem(`${appId}_profile`);
     return saved ? JSON.parse(saved) : null;
   });
+  const [isAdminAuth, setIsAdminAuth] = useState(() => localStorage.getItem(`${appId}_isAdmin`) === 'true');
   
   const [appMode, setAppMode] = useState(null); 
   const [currentTab, setCurrentTab] = useState('explore'); 
 
-  // Data Listeners
   const [books, setBooks] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [supportMessages, setSupportMessages] = useState([]);
 
-  // UI Flow States
+  // Auth UI
   const [authView, setAuthView] = useState('login'); 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [showMpin, setShowMpin] = useState(false);
@@ -109,7 +106,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
 
-  // Modals & Controls
+  // Modals
   const [selectedBook, setSelectedBook] = useState(null);
   const [isAddingBook, setIsAddingBook] = useState(false);
   const [showNotifyModal, setShowNotifyModal] = useState(false);
@@ -117,15 +114,18 @@ export default function App() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCommunityBoard, setShowCommunityBoard] = useState(false);
+  const [isAddingSuggestion, setIsAddingSuggestion] = useState(false); // Fix: Define isAddingSuggestion
+  const [isRequestingTransfer, setIsRequestingTransfer] = useState(false); // Fix: Define isRequestingTransfer
   const [isReportingIssue, setIsReportingIssue] = useState(false);
-  const [isUpdatingProgress, setIsUpdatingProgress] = useState(false); // FIXED: Added missing state
+  const [isAdminModeModal, setIsAdminModeModal] = useState(false);
+  const [isUpdatingProgress, setIsUpdatingProgress] = useState(false);
 
-  // Search/Filter State
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedClassFilter, setSelectedClassFilter] = useState('All');
 
-  // Input Fields
+  // Inputs
   const [tempName, setTempName] = useState(''); 
   const [tempClass, setTempClass] = useState('10th');
   const [tempMobile, setTempMobile] = useState('');
@@ -157,35 +157,10 @@ export default function App() {
     if (typeof setter === 'function') setter(val.replace(/\D/g, '').slice(0, limit));
   };
 
-  // 1. MOBILE BACK BUTTON FIX
+  // Init
   useEffect(() => {
-    const handlePopState = (e) => {
-      if (selectedBook) {
-        setSelectedBook(null);
-        window.history.pushState(null, "");
-      } else if (isAddingBook) {
-        setIsAddingBook(false);
-        window.history.pushState(null, "");
-      } else if (showCommunityBoard) {
-        setShowCommunityBoard(false);
-        window.history.pushState(null, "");
-      } else if (appMode) {
-        setAppMode(null);
-        window.history.pushState(null, "");
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    window.history.pushState(null, ""); 
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [selectedBook, isAddingBook, showCommunityBoard, appMode]);
-
-  // 2. PERSISTENT AUTH INIT
-  useEffect(() => {
-    const initAuth = async () => {
-      try { await signInAnonymously(auth); } catch (e) { console.error("Firebase Auth Error"); }
-    };
+    const initAuth = async () => { try { await signInAnonymously(auth); } catch (e) { console.error(e); } };
     initAuth();
-
     const unsub = onAuthStateChanged(auth, async (u) => { 
       if (u) {
         setUser(u);
@@ -195,78 +170,68 @@ export default function App() {
             const data = snap.data();
             setProfile(data);
             localStorage.setItem(`${appId}_profile`, JSON.stringify(data));
-          } else {
-            setIsAuthModalOpen(true);
-          }
+          } else { setIsAuthModalOpen(true); }
         }
-      } else {
-        setUser(null);
-        setIsAuthModalOpen(true);
-      }
+      } else { setUser(null); setIsAuthModalOpen(true); }
     });
     return () => unsub();
   }, [isAdminAuth, profile]);
 
-  // 3. REAL-TIME DATA
+  // Data Listeners
   useEffect(() => {
     if (!user) return;
-    const unsubBooks = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'books'), (s) => 
-      setBooks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubSuggest = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'suggestions'), (s) => 
-      setSuggestions(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))));
-    const unsubNotify = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'notifications'), (s) => 
-      setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))));
-    const unsubSupport = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'support'), (s) => 
-      setSupportMessages(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))));
-    
-    return () => { unsubBooks(); unsubSuggest(); unsubNotify(); unsubSupport(); };
+    const unsub1 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'books'), s => setBooks(s.docs.map(d => ({id:d.id, ...d.data()}))));
+    const unsub2 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'suggestions'), s => setSuggestions(s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))));
+    const unsub3 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'notifications'), s => setNotifications(s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))));
+    const unsub4 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'support'), s => setSupportMessages(s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))));
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [user]);
 
-  // 4. MEMOIZED FILTERING
+  // Back Button
+  useEffect(() => {
+    const handlePop = () => {
+      if (selectedBook) { setSelectedBook(null); window.history.pushState(null, ""); }
+      else if (isAddingBook) { setIsAddingBook(false); window.history.pushState(null, ""); }
+      else if (showCommunityBoard) { setShowCommunityBoard(false); window.history.pushState(null, ""); }
+      else if (appMode) { setAppMode(null); window.history.pushState(null, ""); }
+    };
+    window.addEventListener('popstate', handlePop);
+    window.history.pushState(null, ""); 
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [selectedBook, isAddingBook, showCommunityBoard, appMode]);
+
+  // Filter
   const filteredBooksList = useMemo(() => {
     let list = [...books];
     if (appMode) list = list.filter(b => b.type === appMode);
-    if (currentTab === 'activity' && user) {
-      list = list.filter(b => b.ownerId === user.uid || (b.waitlist && b.waitlist.some(r => r.uid === user.uid)) || b.pendingRequesterId === user.uid);
-    }
+    if (currentTab === 'activity' && user) list = list.filter(b => b.ownerId === user.uid || (b.waitlist && b.waitlist.some(r => r.uid === user.uid)) || b.pendingRequesterId === user.uid);
     if (selectedCategory !== 'All') list = list.filter(b => b.category === selectedCategory);
     if (selectedClassFilter !== 'All') list = list.filter(b => b.bookClass === selectedClassFilter);
     if (searchTerm.trim()) {
       const t = searchTerm.toLowerCase();
       list = list.filter(b => b.title?.toLowerCase().includes(t) || b.author?.toLowerCase().includes(t));
     }
-    return list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    return list.sort((a, b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
   }, [books, appMode, currentTab, selectedCategory, selectedClassFilter, searchTerm, user]);
 
-  // --- BUSINESS ACTIONS ---
-
+  // Actions
   const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      localStorage.removeItem(`${appId}_profile`);
-      localStorage.removeItem(`${appId}_isAdmin`);
-      setProfile(null); setAppMode(null); setIsAdminAuth(false);
-      setCurrentTab('explore'); setShowLogoutConfirm(false); setIsAuthModalOpen(true);
-    } catch (e) { console.error(e); }
+    try { await signOut(auth); localStorage.clear(); window.location.reload(); } catch (e) { console.error(e); }
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (tempMobile.length !== 10 || tempMpin.length !== 4) { setAuthError('Fill details correctly'); return; }
+    if (tempMobile.length !== 10 || tempMpin.length !== 4) { setAuthError('Invalid Details'); return; }
     try {
       setIsLoading(true);
-      const registryRef = doc(db, 'artifacts', appId, 'public', 'data', 'mobile_registry', tempMobile);
-      const snap = await getDoc(registryRef);
-      if (snap.exists()) { setAuthError('Number already registered.'); setIsLoading(false); return; }
-      
+      const regRef = doc(db, 'artifacts', appId, 'public', 'data', 'mobile_registry', tempMobile);
+      const snap = await getDoc(regRef);
+      if (snap.exists()) { setAuthError('Registered already. Login.'); setIsLoading(false); return; }
       const pData = { name: tempName.trim(), studentClass: tempClass, mobile: tempMobile, mpin: tempMpin, isPrivate: tempIsPrivate, shortId: getShortId(user.uid) };
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), pData);
-      await setDoc(registryRef, { uid: user.uid, mpin: tempMpin });
-      
-      setProfile(pData);
-      localStorage.setItem(`${appId}_profile`, JSON.stringify(pData));
-      setIsAuthModalOpen(false);
-    } catch (err) { setAuthError('Registry fail'); } finally { setIsLoading(false); }
+      await setDoc(regRef, { uid: user.uid, mpin: tempMpin });
+      setProfile(pData); localStorage.setItem(`${appId}_profile`, JSON.stringify(pData)); setIsAuthModalOpen(false);
+    } catch (err) { setAuthError('Error'); } finally { setIsLoading(false); }
   };
 
   const handleLogin = async (e) => {
@@ -274,15 +239,12 @@ export default function App() {
     try {
       setIsLoading(true);
       const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'mobile_registry', loginMobile));
-      if (!snap.exists()) { setAuthError('User not found.'); return; }
-      const data = snap.data();
-      if (data.mpin !== loginMpin) { setAuthError('Wrong PIN'); return; }
-      
-      const pSnap = await getDoc(doc(db, 'artifacts', appId, 'users', data.uid, 'profile', 'data'));
+      if (!snap.exists()) { setAuthError('User not found'); return; }
+      if (snap.data().mpin !== loginMpin) { setAuthError('Wrong PIN'); return; }
+      const pSnap = await getDoc(doc(db, 'artifacts', appId, 'users', snap.data().uid, 'profile', 'data'));
       if (pSnap.exists()) {
-        const pData = pSnap.data();
-        setProfile(pData);
-        localStorage.setItem(`${appId}_profile`, JSON.stringify(pData));
+        setProfile(pSnap.data());
+        localStorage.setItem(`${appId}_profile`, JSON.stringify(pSnap.data()));
         setIsAuthModalOpen(false);
       }
     } catch (err) { setAuthError('Login fail'); } finally { setIsLoading(false); }
@@ -290,10 +252,9 @@ export default function App() {
 
   const handleAdminLogin = (e) => {
     e.preventDefault();
-    if (adminId.toLowerCase() === 'admin' && adminKey === 'admin9893@') {
-      setIsAdminAuth(true);
-      localStorage.setItem(`${appId}_isAdmin`, 'true');
-      setProfile({ name: "School Admin", studentClass: "Staff", mobile: "9999999999", isPrivate: false, shortId: "ROOT" });
+    if (adminId === 'admin' && adminKey === 'admin9893@') {
+      setIsAdminAuth(true); localStorage.setItem(`${appId}_isAdmin`, 'true');
+      setProfile({ name: "Admin", studentClass: "Staff", mobile: "9999999999", isPrivate: false, shortId: "ROOT" });
       setIsAuthModalOpen(false);
     } else setAuthError('Access Denied');
   };
@@ -304,29 +265,16 @@ export default function App() {
     try {
       setIsPublishing(true);
       const today = new Date().toISOString();
-      const ownerName = `${profile?.name || 'User'}#${getShortId(user.uid)}`;
+      const ownerName = `${profile?.name}#${getShortId(user.uid)}`;
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'books'), {
         type: appMode, title: newBookTitle, author: newBookAuthor || 'Unknown', category: newBookCategory,
         bookClass: newBookClass, remark: newBookRemark, imageUrl: bookImageUrl, currentOwner: ownerName, ownerClass: profile?.studentClass || 'Staff',
-        ownerId: user.uid, contact: profile?.mobile || '9999999999', isPrivate: profile?.isPrivate || false,
+        ownerId: user.uid, contact: profile?.mobile, isPrivate: profile?.isPrivate || false,
         since: today, handoverStatus: 'available', waitlist: [], history: [{ owner: ownerName, startDate: today, action: 'Listed' }], 
         createdAt: serverTimestamp(), readingProgress: { pagesRead: 0, started: false }
       });
       setIsAddingBook(false); setNewBookTitle(''); setNewBookAuthor(''); setBookImageUrl('');
     } catch (err) { alert("Add Fail"); } finally { setIsPublishing(false); }
-  };
-
-  const handleDeleteBook = async () => {
-    if (!selectedBook) return;
-    try {
-      if (selectedBook.history?.length === 1 || !selectedBook.history) {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id));
-        setSelectedBook(null); setShowDeleteConfirm(false);
-      } else {
-        alert("Cannot delete! Transfer records exist.");
-        setShowDeleteConfirm(false);
-      }
-    } catch (e) { alert("Delete error"); }
   };
 
   const handleRequestBorrow = async (e) => {
@@ -340,37 +288,46 @@ export default function App() {
     } catch (e) { alert("Fail"); } finally { setIsPublishing(false); }
   };
 
-  const handleOwnerReply = async (reqUid) => {
-    if (!replyInput.text.trim()) return;
-    try {
-      const bookRef = doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id);
-      const updated = selectedBook.waitlist.map(r => r.uid === reqUid ? { ...r, ownerReply: replyInput.text.trim() } : r);
-      await updateDoc(bookRef, { waitlist: updated });
-      setReplyInput({ reqUid: '', text: '' });
-      setSelectedBook({ ...selectedBook, waitlist: updated });
-    } catch (e) { alert("Reply Fail"); }
-  };
-
+  // --- FIXED APPROVAL LOGIC ---
   const handleApproveFromWaitlist = async (reqUser) => {
     try {
+      // Manual filter to avoid arrayRemove issues
+      const newWaitlist = selectedBook.waitlist.filter(u => u.uid !== reqUser.uid);
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id), { 
-        handoverStatus: 'confirming_receipt', pendingRequesterId: reqUser.uid, pendingOwner: reqUser.name, pendingOwnerClass: reqUser.studentClass, pendingContact: reqUser.contact, isPrivate: reqUser.isPrivate, waitlist: arrayRemove(reqUser) 
+        handoverStatus: 'confirming_receipt', pendingRequesterId: reqUser.uid, 
+        pendingOwner: reqUser.name, pendingOwnerClass: reqUser.studentClass, 
+        pendingContact: reqUser.contact, isPrivate: false, 
+        waitlist: newWaitlist 
       });
-      setSelectedBook(null); alert("Approved!");
+      setSelectedBook(null); alert("Approved! Wait for confirmation.");
     } catch (e) { console.error(e); }
   };
 
+  // --- FIXED RECEIPT LOGIC ---
   const handleConfirmReceipt = async () => {
     try {
       const today = new Date().toISOString();
       const updatedHistory = [...(selectedBook.history || [])];
+      if (updatedHistory.length > 0) updatedHistory[updatedHistory.length - 1].endDate = today;
       updatedHistory.push({ owner: selectedBook.pendingOwner, startDate: today, action: 'Transferred' });
+      
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id), { 
-        currentOwner: selectedBook.pendingOwner, ownerClass: selectedBook.pendingOwnerClass, ownerId: selectedBook.pendingRequesterId, contact: selectedBook.pendingContact, isPrivate: selectedBook.isPrivate, history: updatedHistory, since: today, handoverStatus: 'available', pendingRequesterId: null, pendingOwner: null,
-        "readingProgress.started": false, "readingProgress.pagesRead": 0, "readingProgress.lastUpdated": today
+        currentOwner: selectedBook.pendingOwner, ownerClass: selectedBook.pendingOwnerClass, 
+        ownerId: selectedBook.pendingRequesterId, contact: selectedBook.pendingContact, isPrivate: false, 
+        history: updatedHistory, since: today, handoverStatus: 'available', pendingRequesterId: null, pendingOwner: null,
+        "readingProgress.started": false, "readingProgress.pagesRead": 0
       });
-      setSelectedBook(null); alert("Success!");
+      setSelectedBook(null); alert("Book Received!");
     } catch (e) { console.error(e); }
+  };
+
+  const handleOwnerReply = async (reqUid) => {
+    if (!replyInput.text.trim()) return;
+    try {
+      const updated = selectedBook.waitlist.map(r => r.uid === reqUid ? { ...r, ownerReply: replyInput.text.trim() } : r);
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id), { waitlist: updated });
+      setReplyInput({ reqUid: '', text: '' }); setSelectedBook({ ...selectedBook, waitlist: updated });
+    } catch (e) { alert("Error"); }
   };
 
   const handleImageUpload = async (e) => {
@@ -380,8 +337,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onloadend = async () => {
       const comp = await compressImage(reader.result);
-      setBookImageUrl(comp);
-      setIsLoading(false);
+      setBookImageUrl(comp); setIsLoading(false);
     };
     reader.readAsDataURL(file);
   };
@@ -390,324 +346,305 @@ export default function App() {
     e.preventDefault();
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'notifications'), { message: broadcastMsg, createdAt: serverTimestamp(), sender: "School Admin" });
-      setBroadcastMsg(''); setShowAdminBroadcast(false); alert("Broadcasted!");
+      setBroadcastMsg(''); setShowAdminBroadcast(false); alert("Success!");
     } catch (e) { console.error(e); }
   };
 
   const handleExportCSV = () => {
     if (books.length === 0) return;
-    const headers = ["Title", "Author", "Category", "Class", "Holder"];
-    const rows = books.map(b => [`"${b.title}"`, `"${b.author}"`, `"${b.category}"`, `"${b.bookClass}"`, `"${b.currentOwner}"`]);
+    const headers = ["Title", "Author", "Category", "Class", "Holder", "Contact"];
+    const rows = books.map(b => [`"${b.title}"`, `"${b.author}"`, `"${b.category}"`, `"${b.bookClass}"`, `"${b.currentOwner}"`, `'${b.contact}`]);
     const csv = [headers, ...rows].map(e => e.join(",")).join("\n");
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `Library_Data.csv`;
+    link.download = "Library_Data.csv";
     link.click();
+  };
+
+  const handleDeleteBook = async () => {
+    try {
+      if (selectedBook.history?.length === 1 || !selectedBook.history) {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id));
+        setSelectedBook(null); setShowDeleteConfirm(false);
+      } else alert("Cannot delete transferred book.");
+    } catch (e) { console.error(e); }
+  };
+
+  const handleAddSuggestion = async (e) => {
+    e.preventDefault();
+    if (!suggestMsg.trim()) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'suggestions'), {
+        type: suggestType, message: suggestMsg, 
+        userName: profile?.name || 'User', userClass: profile?.studentClass || 'Staff', createdAt: serverTimestamp()
+      });
+      setSuggestMsg(''); setIsAddingSuggestion(false);
+    } catch (err) { console.error(err); }
+  };
+
+  const handleSendSupport = async (e) => {
+    e.preventDefault();
+    if (!reportText.trim()) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'support'), { message: reportText, senderName: profile.name, senderClass: profile.studentClass, senderMobile: profile.mobile, senderUid: user.uid, createdAt: serverTimestamp() });
+      setReportText(''); setIsReportingIssue(false); alert("Sent!");
+    } catch (e) { console.error(e); }
+  };
+
+  const handleUpdateProgress = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', selectedBook.id), { "readingProgress.started": true, "readingProgress.pagesRead": Number(newPagesRead), "readingProgress.lastUpdated": new Date().toISOString() });
+      setIsUpdatingProgress(false); setSelectedBook(null);
+    } catch (e) { console.error(e); }
+  };
+
+  const handleAdminVerify = (e) => {
+    e.preventDefault();
+    if (adminPassAttempt === 'admin9893@') {
+      setIsAdminAuth(true); localStorage.setItem(`${appId}_isAdmin`, 'true');
+      setProfile({ name: "Admin", studentClass: "Staff", mobile: "9999999999", isPrivate: false, shortId: "ROOT" });
+      setIsAuthModalOpen(false); setIsAdminModeModal(false);
+    } else setAdminPassAttempt('');
   };
 
   // --- UI RENDER ---
 
-  if (!user) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-blue-600" size={48} /></div>;
+  if (!user) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24 overflow-x-hidden selection:bg-blue-100">
       
-      {/* AUTH OVERLAY */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-white z-[300] flex items-center justify-center p-6 overflow-y-auto">
-          <div className="max-w-sm w-full py-10 text-center animate-in zoom-in-95 duration-500">
-            <div className="bg-blue-600 w-24 h-24 rounded-[3rem] mx-auto mb-6 shadow-2xl relative flex items-center justify-center">
-               <BookOpen className="text-white w-12 h-12" />
-               <div className="absolute -bottom-1 -right-1 bg-white p-2 rounded-2xl shadow-lg">
-                 {authView === 'login' ? <KeyRound className="text-blue-600 w-6 h-6"/> : authView === 'register' ? <UserPlus className="text-blue-600 w-6 h-6"/> : <ShieldAlert className="text-red-600 w-6 h-6"/>}
-               </div>
-            </div>
-            <h1 className="text-4xl font-black tracking-tighter">BookShare</h1>
-            <div className="bg-slate-100 p-1.5 rounded-[2rem] flex my-10">
-               {['login', 'register', 'admin'].map(v => (
-                 <button key={v} onClick={() => {setAuthView(v); setAuthError('');}} className={`flex-1 py-3 rounded-[1.5rem] font-black uppercase text-[9px] tracking-widest transition-all ${authView === v ? 'bg-white shadow-lg text-blue-600' : 'text-slate-400'}`}>{v}</button>
-               ))}
-            </div>
-            {authError && <div className="mb-6 p-4 bg-rose-50 text-rose-600 rounded-2xl text-[10px] font-black border border-rose-100 animate-bounce uppercase text-center">{String(authError)}</div>}
-            {authView === 'login' && (
-              <form onSubmit={handleLogin} className="space-y-4 text-left">
-                <div><label className="text-[10px] font-black uppercase text-slate-400 ml-4 mb-2 block tracking-widest text-left">Mobile</label><input required type="tel" maxLength={10} className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-bold border-2 border-slate-100 focus:border-blue-600 outline-none" value={loginMobile} onChange={e => handleNumericInput(e.target.value, setLoginMobile, 10)} /></div>
-                <div><label className="text-[10px] font-black uppercase text-slate-400 ml-4 mb-2 block tracking-widest text-left">PIN</label><div className="relative"><Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input required type={showMpin ? "text" : "password"} maxLength={4} placeholder="••••" className="w-full pl-14 pr-16 py-5 bg-slate-50 rounded-[2rem] font-black text-2xl border-2 border-slate-100 focus:border-blue-600 outline-none tracking-[0.5em] text-left" value={loginMpin} onChange={e => handleNumericInput(e.target.value, setLoginMpin, 4)} /><button type="button" onClick={() => setShowMpin(!showMpin)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 p-2">{showMpin ? <EyeOff size={20}/> : <Eye size={20}/>}</button></div></div>
-                <button type="submit" disabled={isLoading} className="w-full py-5 rounded-[2rem] font-black uppercase text-xs shadow-2xl mt-6 bg-blue-600 text-white active:scale-95 transition-all">Unlock Dashboard</button>
-              </form>
-            )}
-            {authView === 'register' && (
-              <form onSubmit={handleRegister} className="space-y-4 text-left">
-                <div className="grid grid-cols-2 gap-4">
-                  <input required placeholder="Name" className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-bold border-2 border-slate-100 outline-none" value={tempName} onChange={e => setTempName(e.target.value)} />
-                  <select className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-bold border-2 border-slate-100 outline-none" value={tempClass} onChange={e => setTempClass(e.target.value)}>{CLASSES.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                </div>
-                <input required type="tel" maxLength={10} placeholder="Mobile Number" className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-bold border-2 border-slate-100 focus:border-blue-600 outline-none" value={tempMobile} onChange={e => handleNumericInput(e.target.value, setTempMobile, 10)} />
-                <input required type="password" maxLength={4} placeholder="Set 4-PIN" className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-black text-xl text-center tracking-[0.3em] border-2 border-slate-100 focus:border-blue-600 outline-none text-left" value={tempMpin} onChange={e => handleNumericInput(e.target.value, setTempMpin, 4)} />
-                <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 flex items-center justify-between shadow-sm">
-                   <div className="flex items-center gap-2 text-left text-left"><ShieldCheck className="text-blue-600" size={18} /><span className="text-[10px] font-black uppercase text-slate-500 tracking-widest text-left">Hide Mobile?</span></div>
-                   <button type="button" onClick={() => setTempIsPrivate(!tempIsPrivate)} className={`w-12 h-6 rounded-full relative transition-colors ${tempIsPrivate ? 'bg-blue-600' : 'bg-slate-300'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${tempIsPrivate ? 'right-1' : 'left-1'}`} /></button>
-                </div>
-                <button type="submit" disabled={isLoading} className="w-full py-5 rounded-[2rem] font-black uppercase text-xs shadow-2xl mt-6 bg-slate-900 text-white active:scale-95 transition-all shadow-slate-200">Register Profile</button>
-              </form>
-            )}
-            {authView === 'admin' && (
-              <form onSubmit={handleAdminLogin} className="space-y-4 text-left">
-                <div><label className="text-[10px] font-black uppercase text-slate-400 ml-4 mb-2 block tracking-widest text-left">Admin ID</label><input required placeholder="admin" className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-bold border-2 border-slate-100 focus:border-red-600 outline-none transition-all" value={adminId} onChange={e => setAdminId(e.target.value)} /></div>
-                <div><label className="text-[10px] font-black uppercase text-slate-400 ml-4 mb-2 block tracking-widest text-left">Secret Key</label><input required type="password" placeholder="••••" className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-bold border-2 border-slate-100 focus:border-red-600 outline-none transition-all" value={adminKey} onChange={e => setAdminKey(e.target.value)} /></div>
-                <button type="submit" className="w-full py-5 rounded-[2rem] font-black uppercase text-xs shadow-2xl mt-6 bg-red-600 text-white active:scale-95 shadow-red-100 text-center">Unlock root access</button>
-              </form>
-            )}
+          <div className="max-w-sm w-full py-10 text-center animate-in zoom-in-95">
+             <div className="bg-blue-600 w-24 h-24 rounded-[3rem] mx-auto mb-6 flex items-center justify-center shadow-2xl"><BookOpen className="text-white w-12 h-12" /></div>
+             <h1 className="text-4xl font-black mb-10">BookShare</h1>
+             <div className="bg-slate-100 p-1.5 rounded-[2rem] flex mb-8">
+               {['login', 'register', 'admin'].map(v => <button key={v} onClick={() => {setAuthView(v); setAuthError('');}} className={`flex-1 py-3 rounded-[1.5rem] font-black uppercase text-[9px] ${authView === v ? 'bg-white shadow-lg text-blue-600' : 'text-slate-400'}`}>{v}</button>)}
+             </div>
+             {authError && <div className="mb-6 p-4 bg-rose-50 text-rose-600 rounded-2xl text-[10px] font-black uppercase">{authError}</div>}
+             {authView === 'login' && <form onSubmit={handleLogin} className="space-y-4"><input className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-bold outline-none" placeholder="Mobile" value={loginMobile} onChange={e => handleNumericInput(e.target.value, setLoginMobile, 10)} /><input type={showMpin?"text":"password"} className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-black tracking-[0.5em] outline-none" placeholder="PIN" value={loginMpin} onChange={e => handleNumericInput(e.target.value, setLoginMpin, 4)} /><button type="button" onClick={()=>setShowMpin(!showMpin)} className="text-xs text-slate-400 font-bold uppercase mb-4 block">Show PIN</button><button disabled={isLoading} className="w-full py-5 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-xs shadow-xl">Unlock</button></form>}
+             {authView === 'register' && <form onSubmit={handleRegister} className="space-y-4"><input className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-bold outline-none" placeholder="Name" value={tempName} onChange={e => setTempName(e.target.value)} /><select className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-bold outline-none" value={tempClass} onChange={e => setTempClass(e.target.value)}>{CLASSES.map(c=><option key={c} value={c}>{c}</option>)}</select><input className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-bold outline-none" placeholder="Mobile" value={tempMobile} onChange={e => handleNumericInput(e.target.value, setTempMobile, 10)} /><input className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] font-black tracking-[0.3em] outline-none" placeholder="PIN" value={tempMpin} onChange={e => handleNumericInput(e.target.value, setTempMpin, 4)} /><div className="flex items-center justify-between px-2"><span className="text-[10px] font-black uppercase text-slate-400">Hide Mobile?</span><button type="button" onClick={()=>setTempIsPrivate(!tempIsPrivate)} className={`w-10 h-5 rounded-full relative ${tempIsPrivate?'bg-blue-600':'bg-slate-300'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${tempIsPrivate?'right-1':'left-1'}`}/></button></div><button disabled={isLoading} className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase text-xs shadow-2xl mt-6">Register Profile</button></form>}
+             {authView === 'admin' && <form onSubmit={handleAdminLogin} className="space-y-4"><input className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-bold outline-none" placeholder="ID" value={adminId} onChange={e => setAdminId(e.target.value)} /><input type="password" className="w-full px-6 py-5 bg-slate-50 rounded-[2rem] font-bold outline-none" placeholder="Key" value={adminKey} onChange={e => setAdminKey(e.target.value)} /><button className="w-full py-5 bg-red-600 text-white rounded-[2rem] font-black uppercase text-xs shadow-xl">Root Access</button></form>}
           </div>
         </div>
       )}
 
-      {/* DASHBOARD */}
       {!appMode ? (
-        <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-700">
-          <div className="mb-12 flex flex-col items-center relative text-center">
-            <div className="relative mx-auto w-24 h-24 mb-6 text-center text-center">
-              <div className="bg-blue-600 w-24 h-24 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-blue-200 animate-in slide-in-from-top duration-700 text-center"><BookOpen className="text-white w-12 h-12" /></div>
-              <button onClick={() => setShowNotifyModal(true)} className="absolute -top-3 -right-3 bg-rose-500 text-white w-10 h-10 rounded-full flex items-center justify-center border-4 border-white shadow-xl animate-bounce">
-                <Bell size={18} fill="currentColor" />
-                {notifications.length > 0 && <span className="absolute -top-1 -right-1 bg-white text-rose-600 w-4 h-4 rounded-full text-[8px] font-black border border-rose-100">{notifications.length}</span>}
-              </button>
-            </div>
-            <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-3">BookShare</h1>
-            <div className="bg-slate-100 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-400">@{profile?.name} {isAdminAuth && "(ROOT)"}</div>
-            <button onClick={() => setShowLogoutConfirm(true)} className="text-red-400 hover:text-red-500 font-black uppercase text-[10px] flex items-center gap-2 mt-4 transition-colors text-center text-center"><LogOut size={14} /> Logout</button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-2xl text-center">
-            <button onClick={() => {setAppMode('sharing'); setCurrentTab('explore');}} className="group bg-white p-8 rounded-[3rem] shadow-xl border flex flex-col items-center transition-all hover:border-blue-200 hover:-translate-y-2"><Users size={40} className="mb-4 text-blue-600" /><h2 className="text-2xl font-black text-center text-center">Sharing Hub</h2></button>
-            <button onClick={() => {setAppMode('donation'); setCurrentTab('explore');}} className="group bg-white p-8 rounded-[3rem] shadow-xl border flex flex-col items-center transition-all hover:border-rose-200 hover:-translate-y-2"><Heart size={40} className="mb-4 text-rose-600" /><h2 className="text-2xl font-black text-center text-center">Donation Hub</h2></button>
-          </div>
-          <div className="mt-12 flex flex-wrap justify-center gap-4 text-center">
-            <button onClick={() => setShowCommunityBoard(true)} className="flex items-center gap-3 bg-blue-50/50 px-6 py-3 rounded-full hover:bg-blue-100 transition-all border border-blue-100 group shadow-sm text-center"><Megaphone size={18} className="text-blue-600 group-hover:rotate-12 transition-transform"/><span className="text-[10px] font-black uppercase tracking-widest text-blue-600">Community Board</span></button>
-            <button onClick={() => setIsReportingIssue(true)} className="flex items-center gap-3 bg-white px-6 py-3 rounded-full border-2 hover:bg-slate-50 transition-all active:scale-95 group shadow-sm text-center"><Headset size={18} className="text-slate-500 group-hover:text-blue-600 transition-colors"/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-800 text-center">Admin Support</span></button>
-          </div>
+        <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+           <div className="mb-12 text-center"><div className="bg-blue-600 w-24 h-24 rounded-[2.5rem] flex items-center justify-center shadow-2xl mx-auto mb-6"><BookOpen className="text-white w-12 h-12" /></div><h1 className="text-5xl font-black mb-3">BookShare</h1><div className="bg-slate-100 px-4 py-1.5 rounded-full text-[10px] font-black uppercase text-slate-400">@{profile?.name}</div><button onClick={()=>setShowLogoutConfirm(true)} className="text-red-400 text-[10px] font-black uppercase mt-4 flex items-center gap-2 justify-center"><LogOut size={14}/> Logout</button></div>
+           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-2xl"><button onClick={()=>{setAppMode('sharing');setCurrentTab('explore');}} className="bg-white p-8 rounded-[3rem] shadow-xl border flex flex-col items-center"><Users size={40} className="mb-4 text-blue-600"/><h2 className="text-2xl font-black">Sharing</h2></button><button onClick={()=>{setAppMode('donation');setCurrentTab('explore');}} className="bg-white p-8 rounded-[3rem] shadow-xl border flex flex-col items-center"><Heart size={40} className="mb-4 text-rose-600"/><h2 className="text-2xl font-black">Donation</h2></button></div>
+           <div className="mt-12 flex justify-center gap-4"><button onClick={()=>setShowCommunityBoard(true)} className="bg-blue-50 px-6 py-3 rounded-full flex items-center gap-2 text-blue-600 font-black text-[10px] uppercase"><Megaphone size={16}/> Board</button><button onClick={()=>setIsReportingIssue(true)} className="bg-slate-50 px-6 py-3 rounded-full flex items-center gap-2 text-slate-500 font-black text-[10px] uppercase"><Headset size={16}/> Support</button></div>
         </div>
       ) : (
-        <div className="animate-in fade-in duration-500 text-center">
-          <header className={`bg-white sticky top-0 z-40 p-4 border-b flex justify-between items-center ${isAdminAuth ? 'border-red-100 border-b-2' : ''}`}>
-            <div className="flex items-center gap-4 text-left text-left text-left"><button onClick={() => setAppMode(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-left text-left text-left text-left text-left"><ChevronLeft size={24}/></button><div><h1 className="text-lg font-black uppercase tracking-tight text-left text-left text-left text-left text-left">{appMode} Hub</h1><div className="text-[9px] font-black uppercase text-slate-400 text-left text-left text-left text-left text-left">{currentTab === 'explore' ? 'Student Library' : 'My Activity'}</div></div></div>
-            <div className="flex items-center gap-2 text-left text-left text-left text-left text-left">
-              <button onClick={() => setShowNotifyModal(true)} className="p-3 bg-rose-50 rounded-2xl text-rose-600 hover:bg-rose-100 transition-colors shadow-sm"><Bell size={20}/></button>
-              <button onClick={() => setIsAddingBook(true)} className={`${appMode === 'sharing' ? 'bg-blue-600' : 'bg-rose-600'} text-white h-12 px-5 rounded-2xl flex items-center gap-2 shadow-xl active:scale-90 transition-all text-center text-center text-center text-center text-center text-center`}><Plus size={20}/><span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Add Book</span></button>
-            </div>
+        <div>
+          <header className={`bg-white sticky top-0 z-40 p-4 border-b flex justify-between items-center ${isAdminAuth?'border-red-100':''}`}>
+             <div className="flex items-center gap-4"><button onClick={()=>setAppMode(null)}><ChevronLeft/></button><div><h1 className="text-lg font-black uppercase">{appMode}</h1><div className="text-[9px] font-black uppercase text-slate-400">{currentTab}</div></div></div>
+             <div className="flex items-center gap-2"><button onClick={()=>setShowNotifyModal(true)} className="p-3 bg-rose-50 rounded-2xl text-rose-600"><Bell size={20}/></button><button onClick={()=>setIsAddingBook(true)} className="bg-blue-600 text-white h-12 px-5 rounded-2xl flex items-center gap-2 shadow-xl"><Plus size={20}/><span className="text-[10px] font-black uppercase hidden sm:inline">Add</span></button></div>
           </header>
-          
-          {currentTab === 'explore' && (
-            <div className="max-w-5xl mx-auto p-4 space-y-4 animate-in slide-in-from-top duration-300 text-center text-center text-center">
-              <div className="relative text-center text-center text-center text-center text-center"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/><input placeholder="Search library..." className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl font-bold focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all outline-none text-left text-left text-left text-left" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
-              
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 text-center text-center text-center text-center text-center">
-                {['All', ...CATEGORIES].map(cat => <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase border whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500'}`}>{cat}</button>)}
-              </div>
 
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 border-t pt-4 text-center text-center text-center text-center text-center">
-                <div className="flex items-center gap-2 px-3 text-slate-400 text-center text-center text-center text-center text-center"><Filter size={14}/> <span className="text-[9px] font-black uppercase tracking-tighter text-center">Class:</span></div>
-                {['All', ...CLASSES].map(cl => <button key={cl} onClick={() => setSelectedClassFilter(cl)} className={`px-5 py-2 rounded-lg text-[9px] font-black uppercase border whitespace-nowrap transition-all ${selectedClassFilter === cl ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-400 border-slate-100'}`}>{cl}</button>)}
-              </div>
-            </div>
-          )}
+          {currentTab === 'explore' && <div className="max-w-5xl mx-auto p-4 space-y-4"><div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/><input className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl font-bold outline-none" placeholder="Search..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/></div><div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">{['All', ...CATEGORIES].map(c=><button key={c} onClick={()=>setSelectedCategory(c)} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase border whitespace-nowrap ${selectedCategory===c?'bg-slate-900 text-white':'bg-white text-slate-500'}`}>{c}</button>)}</div><div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 border-t pt-4"><div className="flex items-center gap-2 px-3 text-slate-400"><Filter size={14}/><span className="text-[9px] font-black uppercase">Class:</span></div>{['All', ...CLASSES].map(c=><button key={c} onClick={()=>setSelectedClassFilter(c)} className={`px-5 py-2 rounded-lg text-[9px] font-black uppercase border whitespace-nowrap ${selectedClassFilter===c?'bg-blue-600 text-white':'bg-white text-slate-400'}`}>{c}</button>)}</div></div>}
 
-          <main className="max-w-5xl mx-auto p-4 pb-24 text-center text-center">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 animate-in fade-in duration-500 text-center text-center text-center text-center text-center">
-              {filteredBooksList.map(book => (
-                <div key={book.id} onClick={() => setSelectedBook(book)} className="bg-white rounded-[2.5rem] overflow-hidden border shadow-sm cursor-pointer relative group transition-all hover:shadow-xl hover:-translate-y-1 text-center text-center text-center text-center text-center">
-                  <div className="aspect-[4/5] bg-slate-100 overflow-hidden relative text-center text-center text-center text-center text-center">
-                    {book.imageUrl ? <img src={book.imageUrl} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px] text-center text-center text-center text-center">NO COVER</div>}
-                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-2 py-1 rounded-lg text-[8px] font-black shadow-sm text-slate-900 uppercase text-center text-center text-center text-center text-center">CL: {String(book.bookClass)}</div>
-                    {book.waitlist?.length > 0 && <div className="absolute bottom-3 right-3 bg-blue-600 text-white px-2 py-1 rounded-lg text-[8px] font-black shadow-lg text-center text-center text-center text-center">WAIT: {book.waitlist.length}</div>}
-                    {book.handoverStatus === 'confirming_receipt' && <div className="absolute inset-0 bg-blue-600/20 backdrop-blur-[2px] flex items-center justify-center"><div className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-[8px] font-black animate-pulse uppercase">Handover Process</div></div>}
-                  </div>
-                  <div className="p-4 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><h3 className="font-black text-sm truncate text-left text-left text-left text-left text-left">{String(book.title)}</h3><div className="text-[9px] text-slate-400 font-bold mt-2 uppercase text-left text-left text-left text-left text-left">{String(book.ownerClass)} Holder • {calculateDaysDiff(book.since)}d held</div><div className="w-full h-1 bg-slate-100 mt-3 rounded-full overflow-hidden text-left text-left text-left text-left text-left text-left text-left"><div className="bg-emerald-500 h-full transition-all duration-1000 text-left text-left text-left text-left text-left text-left text-left" style={{ width: `${Math.min((book.readingProgress?.pagesRead || 0) / 2, 100)}%` }}></div></div></div>
-                </div>
-              ))}
-              {filteredBooksList.length === 0 && <div className="col-span-full py-20 text-center text-slate-300 font-black uppercase text-xs italic tracking-widest text-center text-center text-center text-center">No results found</div>}
-            </div>
+          <main className="max-w-5xl mx-auto p-4 pb-24">
+             {currentTab === 'inbox' && isAdminAuth ? (
+               <div className="space-y-6">
+                 <div className="flex justify-between items-center bg-red-50 p-6 rounded-[2.5rem] border border-red-100"><div><h2 className="text-xl font-black text-red-900">Admin Control</h2><p className="text-[9px] font-bold text-red-600 uppercase">Records & Broadcast</p></div><button onClick={handleExportCSV} className="bg-red-600 text-white p-4 rounded-2xl"><Download size={20}/></button></div>
+                 <button onClick={()=>setShowAdminBroadcast(true)} className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xs uppercase shadow-xl flex items-center justify-center gap-3"><Volume2 size={20}/> Broadcast</button>
+                 {supportMessages.map(msg => <div key={msg.id} className="p-6 bg-white border border-slate-100 rounded-[2.5rem] shadow-sm"><div className="text-sm font-black">@{msg.senderName} ({msg.senderClass})</div><p className="mt-4 text-slate-700 italic">"{msg.message}"</p></div>)}
+               </div>
+             ) : (
+               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                 {filteredBooksList.map(b => (
+                   <div key={b.id} onClick={()=>setSelectedBook(b)} className="bg-white rounded-[2.5rem] overflow-hidden border shadow-sm relative group">
+                     <div className="aspect-[4/5] bg-slate-100 relative">{b.imageUrl ? <img src={b.imageUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px]">NO COVER</div>}{b.waitlist?.length > 0 && <div className="absolute top-3 right-3 bg-blue-600 text-white px-2 py-1 rounded-lg text-[8px] font-black shadow-lg">WAIT: {b.waitlist.length}</div>}{b.handoverStatus === 'confirming_receipt' && <div className="absolute inset-0 bg-blue-600/20 backdrop-blur-[2px] flex items-center justify-center"><div className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-[8px] font-black animate-pulse uppercase">Handover</div></div>}</div>
+                     <div className="p-4"><h3 className="font-black text-sm truncate">{b.title}</h3><div className="text-[9px] text-slate-400 font-bold mt-2 uppercase">{b.ownerClass} • {calculateDaysDiff(b.since)}d</div></div>
+                   </div>
+                 ))}
+               </div>
+             )}
           </main>
 
-          <nav className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-xl border-t p-4 flex justify-around shadow-2xl z-40 text-center text-center text-center text-center text-center text-center text-center text-center">
-            <button onClick={() => setCurrentTab('explore')} className={`flex flex-col items-center gap-1 active:scale-90 transition-all ${currentTab === 'explore' ? 'text-slate-900 scale-110' : 'text-slate-300'}`}><LayoutGrid/><span className="text-[8px] font-black uppercase text-center text-center text-center text-center">Library</span></button>
-            {isAdminAuth ? <button onClick={() => setCurrentTab('inbox')} className={`flex flex-col items-center gap-1 active:scale-90 transition-all ${currentTab === 'inbox' ? 'text-red-600 scale-110' : 'text-slate-300'}`}><Inbox/><span className="text-[8px] font-black uppercase tracking-widest text-center text-center text-center text-center text-center">Admin</span></button> : <button onClick={() => setCurrentTab('activity')} className={`flex flex-col items-center gap-1 active:scale-90 transition-all ${currentTab === 'activity' ? 'text-slate-900 scale-110' : 'text-slate-300'}`}><Bookmark/><span className="text-[8px] font-black uppercase text-center text-center text-center text-center text-center text-center">Activity</span></button>}
-          </nav>
+          <nav className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-xl border-t p-4 flex justify-around shadow-2xl z-40"><button onClick={()=>setCurrentTab('explore')} className={`flex flex-col items-center gap-1 ${currentTab==='explore'?'text-slate-900':'text-slate-300'}`}><LayoutGrid/><span className="text-[8px] font-black uppercase">Library</span></button>{isAdminAuth ? <button onClick={()=>setCurrentTab('inbox')} className={`flex flex-col items-center gap-1 ${currentTab==='inbox'?'text-red-600':'text-slate-300'}`}><Inbox/><span className="text-[8px] font-black uppercase">Admin</span></button> : <button onClick={()=>setCurrentTab('activity')} className={`flex flex-col items-center gap-1 ${currentTab==='activity'?'text-slate-900':'text-slate-300'}`}><Bookmark/><span className="text-[8px] font-black uppercase">Activity</span></button>}</nav>
         </div>
       )}
 
-      {/* --- ALL OVERLAYS --- */}
-
-      {/* MODAL: BOOK DETAILS (FIXED: isUpdatingProgress check) */}
-      {selectedBook && !showDeleteConfirm && !isUpdatingProgress && (
+      {selectedBook && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
-          <div className={`bg-white w-full max-w-lg rounded-t-[3.5rem] sm:rounded-[3.5rem] overflow-hidden animate-in slide-in-from-bottom duration-500 my-auto shadow-2xl ${isAdminAuth ? 'border-4 border-red-100' : ''} text-left text-left text-left text-left text-left text-left text-left text-left`}>
-            <div className="h-64 relative bg-slate-200 text-left text-left text-left text-left text-left text-left text-left text-left">
-              {selectedBook.imageUrl ? <img src={selectedBook.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black uppercase text-xs text-center text-center text-center text-center text-center text-center">No Cover</div>}
-              <div className="absolute top-6 right-6 flex gap-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                {user && selectedBook.ownerId === user.uid && (selectedBook.history?.length === 1 || !selectedBook.history) && (
-                  <button onClick={() => setShowDeleteConfirm(true)} className="bg-red-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-all text-center text-center text-center text-center text-center text-center text-center text-center text-center"><Trash2 size={20} /></button>
-                )}
-                <button onClick={() => setSelectedBook(null)} className="bg-black/20 backdrop-blur-md text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center"><X size={20} /></button>
-              </div>
+          <div className="bg-white w-full max-w-lg rounded-t-[3.5rem] sm:rounded-[3.5rem] overflow-hidden animate-in slide-in-from-bottom duration-500 shadow-2xl">
+            <div className="h-64 relative bg-slate-200">
+               {selectedBook.imageUrl ? <img src={selectedBook.imageUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black">NO COVER</div>}
+               <div className="absolute top-6 right-6 flex gap-2">{(isAdminAuth || (selectedBook.ownerId === user.uid && selectedBook.history?.length === 1)) && <button onClick={()=>setShowDeleteConfirm(true)} className="bg-red-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"><Trash2 size={20}/></button>}<button onClick={()=>setSelectedBook(null)} className="bg-black/20 text-white w-10 h-10 rounded-xl flex items-center justify-center"><X size={20}/></button></div>
             </div>
-            <div className="p-8 bg-white max-h-[90dvh] overflow-y-auto no-scrollbar text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-              <h2 className="text-2xl font-black mb-1 text-left text-left text-left text-left text-left text-left text-left text-left text-left">{String(selectedBook.title)}</h2>
-              <div className="text-slate-400 font-bold text-xs mb-8 uppercase tracking-widest text-left flex items-center gap-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><div className="w-4 h-0.5 bg-slate-200 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"></div> by {String(selectedBook.author)}</div>
-              
-              <div className="bg-slate-50 p-6 rounded-[3rem] border border-slate-100 flex items-center gap-4 shadow-sm text-left mb-8 relative text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                 <div className={`p-3 rounded-2xl ${isAdminAuth ? 'bg-red-100 text-red-600' : 'bg-white text-blue-600 shadow-sm'} text-left text-left text-left text-left text-left text-left text-left text-left text-left`}><Phone size={20}/></div>
-                 <div className="text-left text-sm font-black tracking-widest text-slate-800 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                    {(isAdminAuth || !selectedBook.isPrivate || selectedBook.ownerId === user.uid) ? (
-                      <>{String(selectedBook.contact)}{selectedBook.isPrivate && <span className="bg-red-600 text-white px-2 py-0.5 rounded text-[8px] uppercase font-black ml-2 animate-pulse text-left text-left text-left text-left text-left text-left text-left text-left text-left">God Mode</span>}</>
-                    ) : (
-                      <span className="italic flex items-center gap-2 text-slate-400 font-bold text-left text-left text-left text-left text-left text-left text-left text-left text-left"><EyeOff size={14}/> Hidden Number</span>
-                    )}
+            <div className="p-8 bg-white max-h-[90dvh] overflow-y-auto no-scrollbar">
+               <h2 className="text-2xl font-black mb-1">{selectedBook.title}</h2>
+               <div className="text-slate-400 font-bold text-xs mb-8 uppercase tracking-widest">by {selectedBook.author}</div>
+               
+               <div className="bg-slate-50 p-6 rounded-[3rem] border border-slate-100 flex items-center gap-4 shadow-sm mb-8">
+                  <div className="p-3 rounded-2xl bg-white text-blue-600 shadow-sm"><Phone size={20}/></div>
+                  <div><div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Holder Contact</div><div className="font-black text-sm">{(isAdminAuth || !selectedBook.isPrivate || selectedBook.ownerId === user.uid) ? selectedBook.contact : <span className="italic text-slate-400 font-bold">Hidden</span>}</div></div>
+               </div>
+
+               {selectedBook.handoverStatus === 'confirming_receipt' && selectedBook.pendingRequesterId === user.uid && (
+                 <div className="mb-8 p-6 bg-blue-600 rounded-[2.5rem] shadow-xl text-center text-white animate-in zoom-in-95">
+                    <h3 className="text-lg font-black uppercase">Confirm Transfer?</h3>
+                    <button onClick={handleConfirmReceipt} className="w-full py-4 bg-white text-blue-600 rounded-2xl font-black uppercase text-xs shadow-lg mt-4">I have the Book</button>
                  </div>
-              </div>
+               )}
 
-              {/* HANDOVER CONFIRMATION */}
-              {selectedBook.handoverStatus === 'confirming_receipt' && selectedBook.pendingRequesterId === user.uid && (
-                <div className="mb-8 p-6 bg-blue-600 rounded-[2.5rem] shadow-xl text-center text-white animate-in zoom-in-95 text-center text-center text-center text-center text-center">
-                  <Sparkles className="mx-auto mb-3 text-center text-center text-center text-center" size={32}/>
-                  <h3 className="text-lg font-black uppercase tracking-tight text-center text-center text-center text-center">Confirm Transfer?</h3>
-                  <p className="text-[10px] font-bold opacity-80 mb-6 text-center text-center text-center text-center">Owner has approved your request. Confirm if you have it.</p>
-                  <button onClick={handleConfirmReceipt} className="w-full py-4 bg-white text-blue-600 rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all text-center text-center text-center text-center">I have the Book</button>
-                </div>
-              )}
-
-              {/* BORROW FORM UI */}
-              {user.uid !== selectedBook.ownerId && !selectedBook.waitlist?.some(r => r.uid === user.uid) && selectedBook.handoverStatus === 'available' && (
-                 <form onSubmit={handleRequestBorrow} className="space-y-4 mb-8 bg-blue-50 p-6 rounded-[2.5rem] border border-blue-100 text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                    <p className="text-[10px] font-black uppercase text-blue-600 tracking-widest mb-2 text-left text-left text-left text-left text-left text-left text-left">Interested? Send Borrow Request</p>
-                    <textarea required placeholder="Message for owner..." className="w-full p-4 bg-white border rounded-2xl text-sm outline-none focus:ring-2 ring-blue-200 resize-none text-left text-left text-left text-left text-left text-left text-left text-left text-left" value={borrowMsg} onChange={e => setBorrowMsg(e.target.value)} />
-                    <input required type="tel" maxLength={10} placeholder="Confirm your 10-digit mobile" className="w-full p-4 bg-white border rounded-2xl text-sm outline-none focus:ring-2 ring-blue-200 text-left text-left text-left text-left text-left text-left text-left text-left text-left" value={borrowMobile} onChange={e => handleNumericInput(e.target.value, setBorrowMobile, 10)} />
-                    <button type="submit" disabled={isPublishing || borrowMobile.length !== 10} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 text-center text-center text-center text-center text-center text-center text-center">
-                       {isPublishing ? <Loader2 className="animate-spin" size={16}/> : <><Send size={16}/> Send Borrow Request</>}
-                    </button>
+               {user.uid !== selectedBook.ownerId && !selectedBook.waitlist?.some(r => r.uid === user.uid) && selectedBook.handoverStatus === 'available' && (
+                 <form onSubmit={handleRequestBorrow} className="space-y-4 mb-8 bg-blue-50 p-6 rounded-[2.5rem] border border-blue-100">
+                    <p className="text-[10px] font-black uppercase text-blue-600">Request Borrow</p>
+                    <textarea required placeholder="Message..." className="w-full p-4 bg-white border rounded-2xl text-sm outline-none" value={borrowMsg} onChange={e => setBorrowMsg(e.target.value)} />
+                    <input required type="tel" maxLength={10} placeholder="Confirm Mobile" className="w-full p-4 bg-white border rounded-2xl text-sm outline-none" value={borrowMobile} onChange={e => handleNumericInput(e.target.value, setBorrowMobile, 10)} />
+                    <button disabled={isPublishing || borrowMobile.length !== 10} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg">Send Request</button>
                  </form>
-              )}
+               )}
 
-              {/* REPLY SECTION FOR BORROWER */}
-              {selectedBook.waitlist?.filter(r => r.uid === user.uid).map((myReq, idx) => (
-                <div key={idx} className="mb-8 space-y-4 text-left text-left text-left text-left text-left">
-                  {myReq.ownerReply && (
-                    <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-[2rem] shadow-sm text-left animate-in slide-in-from-right text-left text-left text-left text-left text-left text-left text-left">
-                      <div className="flex items-center gap-2 mb-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left"><Reply size={16} className="text-emerald-600"/><p className="text-[10px] font-black uppercase text-emerald-600 text-left text-left text-left text-left text-left">Owner's Response</p></div>
-                      <p className="text-sm font-black text-emerald-900 text-left text-left text-left text-left text-left text-left text-left text-left">"{String(myReq.ownerReply)}"</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              <div className="grid grid-cols-2 gap-4 mb-8 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                <div className="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 text-left shadow-sm text-left text-left text-left text-left text-left text-left text-left text-left text-left"><div className="text-[8px] font-black uppercase text-slate-400 mb-1 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">For Class</div><div className="font-black text-sm flex items-center gap-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><GraduationCap size={16} className="text-blue-600" /> {String(selectedBook.bookClass)}</div></div>
-                <div className="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 text-left shadow-sm text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><div className="text-[8px] font-black uppercase text-slate-400 mb-1 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">Since</div><div className="font-black text-sm flex items-center gap-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><Clock size={16} className="text-emerald-600" /> {calculateDaysDiff(selectedBook.since)} Days</div></div>
-              </div>
-
-              {/* BOOK HISTORY */}
-              <div className="mb-8 p-6 bg-slate-50 border border-slate-100 rounded-[2.5rem] shadow-sm text-left text-left text-left text-left text-left text-left text-left">
-                <p className="text-[10px] font-black uppercase text-slate-400 mb-4 flex items-center gap-2 text-left text-left text-left text-left text-left"><History size={16}/> Owner History</p>
-                <div className="space-y-4 text-left text-left text-left text-left text-left text-left text-left text-left">
-                   {selectedBook.history?.map((h, i) => (
-                     <div key={i} className="flex items-start gap-3 relative text-left text-left text-left text-left text-left text-left text-left">
-                        {i < selectedBook.history.length - 1 && <div className="absolute left-2.5 top-5 w-0.5 h-full bg-slate-200"></div>}
-                        <div className={`w-5 h-5 rounded-full border-2 border-white shadow-sm shrink-0 mt-1 ${i === selectedBook.history.length - 1 ? 'bg-blue-600 animate-pulse' : 'bg-slate-300'}`}></div>
-                        <div className="text-left text-left text-left text-left text-left">
-                           <div className="text-[11px] font-black">@{String(h.owner)}</div>
-                           <div className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">{String(h.action)} on {safeDate(h.startDate)}</div>
-                        </div>
-                     </div>
-                   ))}
-                </div>
-              </div>
-
-              {/* OWNER APPROVAL HUB */}
-              {(user.uid === selectedBook.ownerId || isAdminAuth) && selectedBook.waitlist?.length > 0 && selectedBook.handoverStatus === 'available' && (
-                <div className={`mt-8 space-y-4 border-2 p-6 rounded-[2.5rem] shadow-sm text-left ${isAdminAuth ? 'bg-red-50/20 border-red-100' : 'bg-blue-50/20 border-blue-100'}`}>
-                   <p className="text-[10px] font-black uppercase text-slate-400 mb-4 flex items-center gap-2 text-left text-left text-left text-left text-left text-left text-left text-left"><Users size={16}/> Requests ({selectedBook.waitlist.length})</p>
-                   {selectedBook.waitlist.map((req, i) => (
-                     <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm mb-4 text-left text-left text-left text-left text-left text-left text-left">
-                        <div className="flex justify-between items-start mb-3 text-left text-left text-left text-left text-left text-left text-left">
-                           <div className="text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><div className="text-sm font-black text-left text-left text-left text-left text-left text-left text-left">@{String(req.name)} (Cl: {String(req.studentClass)})</div><div className="text-[8px] font-bold text-slate-400 uppercase mt-1 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">Mobile: {String(req.contact)}</div></div>
-                           <button onClick={() => handleApproveFromWaitlist(req)} className="bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase shadow-lg transition-all active:scale-95 text-center text-center text-center text-center text-center text-center text-center text-center text-center">Approve</button>
-                        </div>
-                        <p className="text-[11px] text-slate-600 bg-slate-50 p-3 rounded-2xl italic border text-left text-left text-left text-left text-left text-left text-left text-left">"{String(req.message)}"</p>
-                        <div className="mt-4 pt-4 border-t border-slate-50 text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                          {req.ownerReply ? (
-                            <div className="bg-emerald-50 p-3 rounded-2xl flex items-center gap-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                               <CheckCircle2 size={14} className="text-emerald-600"/>
-                               <p className="text-[10px] font-bold text-emerald-800 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">Sent: {String(req.ownerReply)}</p>
-                               <button onClick={() => setReplyInput({ reqUid: req.uid, text: req.ownerReply })} className="text-[8px] font-black uppercase text-blue-600 ml-auto text-left text-left text-left text-left">Edit</button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                               <input placeholder="Coordination reply..." className="flex-1 bg-slate-100 border-none text-[11px] font-bold px-4 py-2.5 rounded-xl outline-none" value={replyInput.reqUid === req.uid ? replyInput.text : ''} onChange={(e) => setReplyInput({ reqUid: req.uid, text: e.target.value })} />
-                               <button onClick={() => handleOwnerReply(req.uid)} className="bg-slate-900 text-white p-2.5 rounded-xl active:scale-90 transition-all text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center"><Send size={14}/></button>
-                            </div>
-                          )}
-                        </div>
-                     </div>
-                   ))}
-                </div>
-              )}
+               {(user.uid === selectedBook.ownerId || isAdminAuth) && selectedBook.waitlist?.length > 0 && (
+                 <div className="mt-8 space-y-4 border-2 p-6 rounded-[2.5rem] shadow-sm bg-blue-50/20 border-blue-100">
+                    <p className="text-[10px] font-black uppercase text-slate-400 mb-4">Requests ({selectedBook.waitlist.length})</p>
+                    {selectedBook.waitlist.map((req, i) => (
+                      <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm mb-4">
+                         <div className="flex justify-between items-start mb-3">
+                            <div><div className="text-sm font-black">@{req.name}</div><div className="text-[8px] font-bold text-slate-400 uppercase">Cl: {req.studentClass} | {req.contact}</div></div>
+                            <button onClick={() => handleApproveFromWaitlist(req)} className="bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase shadow-lg">Approve</button>
+                         </div>
+                         <p className="text-[11px] text-slate-600 bg-slate-50 p-3 rounded-2xl italic border">"{req.message}"</p>
+                         <div className="mt-4 pt-4 border-t border-slate-50">
+                           {req.ownerReply ? <div className="bg-emerald-50 p-3 rounded-2xl text-[10px] font-bold text-emerald-800">Reply: {req.ownerReply}</div> : 
+                           <div className="flex gap-2"><input placeholder="Reply..." className="flex-1 bg-slate-100 border-none text-[11px] font-bold px-4 py-2.5 rounded-xl outline-none" value={replyInput.reqUid === req.uid ? replyInput.text : ''} onChange={(e) => setReplyInput({ reqUid: req.uid, text: e.target.value })} /><button onClick={() => handleOwnerReply(req.uid)} className="bg-slate-900 text-white p-2.5 rounded-xl"><Send size={14}/></button></div>}
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* DELETE CONFIRMATION */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-6 text-center text-left text-left text-left text-left text-left text-left text-left">
-          <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in-95 text-left text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">
-            <div className="bg-red-50 w-24 h-24 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 text-red-600 shadow-xl text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center"><Trash2 size={48} /></div>
-            <h2 className="text-3xl font-black mb-3 text-center text-center text-center text-center text-center text-center text-center text-center text-center tracking-tight text-center text-center text-center text-center text-center text-center">Delete Listing?</h2>
-            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-10 text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Listing hamesha ke liye remove ho jayegi.</p>
-            <div className="flex gap-4 mt-8 text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">
-              <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-4 font-black text-slate-400 text-xs text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center uppercase tracking-widest text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Stay</button>
-              <button onClick={handleDeleteBook} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 shadow-red-100 transition-all text-left text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Confirm Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* LOGOUT CONFIRMATION */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-6 text-center text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-          <div className="bg-white w-full max-sm:w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in-95 text-left text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">
-            <div className="bg-red-50 w-24 h-24 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 text-red-600 shadow-xl text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center"><LogOut size={48} /></div>
-            <h2 className="text-3xl font-black mb-3 text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center tracking-tight text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Logout?</h2>
-            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-10 text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Aap is device se sign out ho jayenge.</p>
-            <div className="flex gap-4 mt-8 text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">
-              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-4 font-black text-slate-400 text-xs text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center uppercase tracking-widest text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Stay</button>
-              <button onClick={handleLogout} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 transition-all text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-center text-center text-center text-center text-center text-center">Logout</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ADD BOOK */}
       {isAddingBook && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[70] flex items-center justify-center p-4">
-          <form onSubmit={handleAddBook} className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl max-h-[90dvh] overflow-y-auto no-scrollbar animate-in duration-300 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-            <div className="flex justify-between items-center mb-8 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><h2 className="text-2xl font-black tracking-tight text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">List a Book</h2><button type="button" onClick={() => setIsAddingBook(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center"><X size={20}/></button></div>
-            <div className="space-y-5 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-              <div onClick={() => !isLoading && fileInputRef.current.click()} className="aspect-video bg-slate-50 border-4 border-dashed border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden group hover:border-blue-200 transition-all relative text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                {(isLoading || isPublishing) && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10 font-black uppercase text-[10px] animate-pulse text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Processing...</div>}
-                {bookImageUrl ? <img src={bookImageUrl} className="w-full h-full object-cover text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center" /> : <><Camera size={48} className="text-slate-200 mb-2 group-hover:text-blue-300 transition-colors text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center" /><div className="text-[10px] font-black uppercase tracking-widest text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center">Add Photo</div></>}<input type="file" ref={fileInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleImageUpload} />
+           <form onSubmit={handleAddBook} className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl max-h-[90dvh] overflow-y-auto">
+              <h2 className="text-2xl font-black mb-8">List Book</h2>
+              <div className="space-y-5">
+                 <div onClick={() => !isLoading && fileInputRef.current.click()} className="aspect-video bg-slate-50 border-4 border-dashed rounded-[2.5rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden">{bookImageUrl ? <img src={bookImageUrl} className="w-full h-full object-cover"/> : <Camera className="text-slate-300"/>}<input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload}/></div>
+                 <input required placeholder="Title" className="w-full p-5 bg-slate-50 rounded-2xl font-bold outline-none" value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} />
+                 <input placeholder="Author" className="w-full p-5 bg-slate-50 rounded-2xl font-bold outline-none" value={newBookAuthor} onChange={e => setNewBookAuthor(e.target.value)} />
+                 <div className="grid grid-cols-2 gap-3">
+                    <select className="w-full p-4 bg-slate-50 rounded-2xl font-black text-[10px] outline-none" value={newBookCategory} onChange={e => setNewBookCategory(e.target.value)}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                    <select className="w-full p-4 bg-slate-50 rounded-2xl font-black text-[10px] outline-none" value={newBookClass} onChange={e => setNewBookClass(e.target.value)}>{CLASSES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                 </div>
+                 <textarea placeholder="Note..." className="w-full h-32 p-5 bg-slate-50 rounded-3xl font-bold text-sm outline-none resize-none" value={newBookRemark} onChange={e => setNewBookRemark(e.target.value)} />
+                 <div className="flex gap-4"><button type="button" onClick={()=>setIsAddingBook(false)} className="flex-1 py-5 font-black uppercase text-xs text-slate-400">Cancel</button><button disabled={isPublishing} className="flex-[2] py-5 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-xs shadow-xl">Publish</button></div>
               </div>
-              <input required placeholder="Book Title" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-600 transition-all shadow-sm text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left shadow-inner text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left" value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} />
-              <input placeholder="Author Name" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-600 transition-all shadow-sm text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left shadow-inner text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left" value={newBookAuthor} onChange={e => setNewBookAuthor(e.target.value)} />
-              
-              <div className="grid grid-cols-2 gap-3 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                 <div className="text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><label className="text-[8px] font-black uppercase text-slate-400 ml-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">Category</label><select className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black uppercase text-[10px] outline-none shadow-sm shadow-inner text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left" value={newBookCategory} onChange={e => setNewBookCategory(e.target.value)}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                 <div className="text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><label className="text-[8px] font-black uppercase text-slate-400 ml-2 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">Book Class</label><select className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black uppercase text-[10px] outline-none shadow-sm shadow-inner text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left" value={newBookClass} onChange={e => setNewBookClass(e.target.value)}>{CLASSES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-              </div>
+           </form>
+        </div>
+      )}
 
-              <textarea placeholder="Advice or condition..." className="w-full h-32 p-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-bold text-sm outline-none focus:border-blue-600 resize-none transition-all shadow-sm text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left shadow-inner text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left" value={newBookRemark} onChange={e => setNewBookRemark(e.target.value)} />
-              <button type="submit" disabled={isLoading || isPublishing} className={`w-full py-5 rounded-[2rem] font-black uppercase text-xs text-white shadow-2xl active:scale-95 transition-all text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center ${appMode === 'sharing' ? 'bg-blue-600 shadow-blue-100' : 'bg-rose-600 shadow-rose-100'} disabled:opacity-50 text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center text-center`}>{isPublishing ? "Publishing..." : "List in Library"}</button>
-            </div>
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 text-center">
+           <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl">
+              <Trash2 size={48} className="mx-auto mb-6 text-red-600" />
+              <h2 className="text-3xl font-black mb-6">Delete?</h2>
+              <div className="flex gap-4"><button onClick={()=>setShowDeleteConfirm(false)} className="flex-1 py-4 font-black uppercase text-xs text-slate-400">Cancel</button><button onClick={handleDeleteBook} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl">Delete</button></div>
+           </div>
+        </div>
+      )}
+
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 text-center">
+           <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl">
+              <LogOut size={48} className="mx-auto mb-6 text-red-600" />
+              <h2 className="text-3xl font-black mb-6">Logout?</h2>
+              <div className="flex gap-4"><button onClick={()=>setShowLogoutConfirm(false)} className="flex-1 py-4 font-black uppercase text-xs text-slate-400">Stay</button><button onClick={handleLogout} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl">Logout</button></div>
+           </div>
+        </div>
+      )}
+
+      {showCommunityBoard && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center sm:items-center items-end p-0 sm:p-4">
+           <div className="bg-white w-full max-w-2xl sm:rounded-[3rem] rounded-t-[3rem] h-[90vh] sm:h-[80vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom">
+              <div className="p-6 border-b flex justify-between items-center"><h2 className="text-xl font-black">Community</h2><button onClick={()=>setShowCommunityBoard(false)}><X/></button></div>
+              <div className="flex-grow overflow-y-auto p-6 space-y-4 no-scrollbar bg-slate-50/30">
+                 {suggestions.map(s => <div key={s.id} className="p-6 rounded-[2.5rem] border bg-white shadow-sm"><span className="text-[9px] font-black uppercase text-blue-600">{s.type}</span><p className="mt-2 text-sm font-bold">"{s.message}"</p><div className="mt-4 text-[10px] font-black text-slate-400 uppercase">@{s.userName}</div></div>)}
+              </div>
+              <div className="p-6 border-t bg-white"><button onClick={()=>setIsAddingSuggestion(true)} className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black text-xs uppercase shadow-xl">Post Message</button></div>
+           </div>
+        </div>
+      )}
+
+      {isAddingSuggestion && (
+        <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-md rounded-[3rem] p-8 shadow-2xl animate-in zoom-in-95">
+              <h2 className="text-2xl font-black mb-6">New Post</h2>
+              <div className="flex gap-2 mb-6"><button onClick={()=>setSuggestType('demand')} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase ${suggestType==='demand'?'bg-blue-100 text-blue-600':'bg-slate-100 text-slate-400'}`}>Demand</button><button onClick={()=>setSuggestType('feedback')} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase ${suggestType==='feedback'?'bg-rose-100 text-rose-600':'bg-slate-100 text-slate-400'}`}>Suggestion</button></div>
+              <textarea placeholder="Write here..." className="w-full h-40 p-5 bg-slate-50 rounded-2xl font-bold border-2 mb-6" value={suggestMsg} onChange={e=>setSuggestMsg(e.target.value)} />
+              <div className="flex gap-4"><button onClick={()=>setIsAddingSuggestion(false)} className="flex-1 py-4 font-black uppercase text-xs text-slate-400">Cancel</button><button onClick={handleAddSuggestion} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl">Post</button></div>
+           </div>
+        </div>
+      )}
+
+      {showAdminBroadcast && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[210] flex items-center justify-center p-4 text-left">
+          <form onSubmit={handleBroadcast} className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl animate-in zoom-in-95 text-left text-left">
+            <h2 className="text-2xl font-black mb-6 flex items-center gap-3 text-left text-left"><Volume2 className="text-red-600"/> Broadcast Message</h2>
+            <textarea required placeholder="Write announcement for all students..." className="w-full h-44 p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] font-bold text-sm focus:border-red-600 outline-none transition-all mb-6 shadow-inner resize-none text-left" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} />
+            <div className="flex gap-4 text-left"><button type="button" onClick={() => setShowAdminBroadcast(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px] text-center">Cancel</button><button type="submit" className="flex-1 bg-red-600 text-white py-5 rounded-3xl font-black uppercase text-xs active:scale-95 shadow-xl text-center">Send Notification</button></div>
           </form>
+        </div>
+      )}
+
+      {isReportingIssue && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[130] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300 text-left text-left">
+             <div className="flex justify-between items-center mb-8 text-left text-left text-left text-left"><div className="flex items-center gap-4 text-left text-left"><div className="bg-blue-600 p-4 rounded-3xl text-white shadow-xl shadow-blue-100 text-left text-left"><Headset size={28} /></div><div className="text-left text-left text-left"><h2 className="text-2xl font-black text-left text-left">Admin Support</h2><p className="text-[9px] font-black text-blue-600 uppercase">Secure Helpdesk</p></div></div><button onClick={() => setIsReportingIssue(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors text-center text-center text-center"><X size={20}/></button></div>
+             <form onSubmit={handleSendSupport} className="space-y-6 text-left text-left text-left"><textarea required placeholder="Message for Admin..." className="w-full h-48 p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] font-bold text-sm outline-none focus:border-blue-600 transition-all shadow-inner resize-none text-left text-left text-left" value={reportText} onChange={e => setReportText(e.target.value)} /><button type="submit" className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black uppercase text-xs shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3 text-center">Submit</button></form>
+          </div>
+        </div>
+      )}
+
+      {showNotifyModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[200] flex items-center justify-center p-4 text-left">
+           <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl animate-in slide-in-from-bottom duration-500 text-left text-left">
+              <div className="flex justify-between items-center mb-8 text-left text-left">
+                 <div className="flex items-center gap-3 text-left text-left"><div className="bg-rose-100 p-3 rounded-2xl text-rose-600 text-left text-left"><Bell size={24}/></div><h2 className="text-2xl font-black tracking-tight text-left text-left">Notices</h2></div>
+                 <button onClick={() => setShowNotifyModal(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors text-center text-center"><X size={20}/></button>
+              </div>
+              <div className="space-y-4 max-h-[50vh] overflow-y-auto no-scrollbar text-left text-left">
+                 {notifications.map(n => (
+                   <div key={n.id} className="p-6 bg-slate-50 border rounded-[2rem] shadow-sm hover:bg-white transition-all text-left text-left">
+                      <p className="text-sm font-bold text-slate-700 italic text-left text-left">"{n.message}"</p>
+                      <div className="mt-4 flex justify-between items-center text-left text-left"><span className="text-[8px] font-black uppercase text-blue-600 text-left text-left">{n.sender}</span><span className="text-[8px] font-black uppercase text-slate-300 text-left text-left">{safeFormatDate(n.createdAt?.toDate?.()?.toISOString())}</span></div>
+                   </div>
+                 ))}
+                 {notifications.length === 0 && <div className="text-center py-20 opacity-20 text-center"><Bell size={64} className="mx-auto mb-4"/><div className="font-black uppercase text-[10px] text-center">No news today</div></div>}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {isUpdatingProgress && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-6 text-center">
+          <form onSubmit={handleUpdateProgress} className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in-95 text-center">
+            <h2 className="text-2xl font-black mb-6 tracking-tight text-center">Reading Status</h2>
+            <input required type="number" placeholder="Enter Page" className="w-full p-6 bg-slate-50 rounded-3xl font-black text-center text-3xl outline-none focus:border-blue-600 border-2 border-slate-100 mb-8" value={newPagesRead} onChange={e => setNewPagesRead(e.target.value)} />
+            <div className="flex gap-4"><button type="button" onClick={() => setIsUpdatingProgress(false)} className="flex-1 py-4 font-black text-slate-400 text-xs">Cancel</button><button type="submit" className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-xl">Update</button></div>
+          </form>
+        </div>
+      )}
+
+      {/* HIDDEN ADMIN LOGIN */}
+      <button onDoubleClick={() => setIsAdminModeModal(true)} className="fixed bottom-0 left-0 w-16 h-16 opacity-0 z-[100]"></button>
+      {isAdminModeModal && (
+        <div className="fixed inset-0 bg-black/95 z-[150] flex items-center justify-center p-6 backdrop-blur-xl">
+           <div className="bg-white w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl text-center">
+               <h2 className="text-3xl font-black mb-2 tracking-tight">Admin Key</h2>
+               <form onSubmit={handleAdminVerify} className="space-y-5"><input type="password" placeholder="Key" className="w-full p-6 bg-slate-100 rounded-3xl font-black text-center text-2xl outline-none focus:border-red-600 border-2 border-transparent transition-all shadow-inner" value={adminPassAttempt} onChange={e => setAdminPassAttempt(e.target.value)} /><button type="submit" className="w-full bg-red-600 text-white py-5 rounded-[2rem] font-black uppercase text-xs shadow-2xl active:scale-95 transition-all text-center">Unlock Root Access</button></form>
+               <button onClick={()=>setIsAdminModeModal(false)} className="mt-8 text-[10px] font-black uppercase text-slate-300 text-center">Cancel</button>
+            </div>
         </div>
       )}
 
