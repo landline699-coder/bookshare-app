@@ -1,114 +1,205 @@
-// src/components/BookDetails.js
 import React, { useState } from 'react';
-import { X, Trash2, History, Calendar, StickyNote, MessageSquare, Reply, Send, CheckCircle2 } from 'lucide-react';
+import { X, Send, User, Trash2, CheckCircle, MessageCircle, Shield, MapPin, Phone } from 'lucide-react';
 
-export default function BookDetails({ 
-  book, user, isAdmin, onBorrow, onApprove, onConfirm, onReply, onDelete, onClose 
-}) {
-  const [msg, setMsg] = useState('');
-  const [reply, setReply] = useState('');
-
+export default function BookDetails({ book, user, isAdmin, onClose, onBorrow, onReply, onDelete }) {
+  // 1. Safety Check: Agar book null hai to kuch mat dikhao
   if (!book) return null;
 
-  const isOwner = book.ownerId === user.uid;
-  const hasRequested = book.waitlist?.some(r => r.uid === user.uid);
-  const myRequest = book.waitlist?.find(r => r.uid === user.uid);
+  const [msg, setMsg] = useState('');
+  const [reply, setReply] = useState('');
+  
+  // 2. Logic Variables
+  const waitlist = book.waitlist || [];
+  const isOwner = user && user.uid === book.ownerId;
+  const myRequest = user ? waitlist.find(r => r.uid === user.uid) : null;
+
+  // ✅ 3. FIX: 'hasPower' ko define kiya gaya hai (Admin ya Owner)
+  const hasPower = isAdmin || isOwner;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-lg rounded-t-[3.5rem] sm:rounded-[3.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex justify-end">
+      
+      {/* Main Panel */}
+      <div className="w-full h-full bg-white sm:max-w-md flex flex-col animate-in slide-in-from-right duration-300 shadow-2xl relative">
         
-        {/* Cover Image & Header Actions */}
-        <div className="h-64 relative bg-slate-200">
-          {book.imageUrl && <img src={book.imageUrl} className="w-full h-full object-cover" alt="Book Cover" />}
-          <div className="absolute top-6 right-6 flex gap-2">
-            {(isAdmin || (isOwner && book.history?.length <= 1)) && (
-              <button onClick={onDelete} className="bg-red-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"><Trash2 size={20}/></button>
-            )}
-            <button onClick={onClose} className="bg-black/20 text-white w-10 h-10 rounded-xl flex items-center justify-center"><X/></button>
+        {/* --- HERO IMAGE SECTION --- */}
+        <div className="relative h-[40vh] w-full flex-shrink-0 group bg-slate-900">
+          {book.imageUrl ? (
+            <img src={book.imageUrl} className="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105" alt="" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-500 font-black text-2xl">NO COVER</div>
+          )}
+          
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"/>
+
+          <button onClick={onClose} className="absolute top-5 left-5 bg-black/20 hover:bg-black/40 backdrop-blur-md p-3 rounded-full text-white transition-all active:scale-90 border border-white/10">
+            <X size={24}/>
+          </button>
+
+          {/* Book Info */}
+          <div className="absolute bottom-0 left-0 w-full p-6 text-white">
+            <div className="flex gap-2 mb-3">
+              <span className="bg-indigo-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg">{book.category}</span>
+              <span className="bg-white/20 backdrop-blur px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border border-white/10">{book.bookClass}</span>
+            </div>
+            <h1 className="text-3xl font-black uppercase leading-tight mb-2 tracking-tight">{book.title}</h1>
+            <div className="flex items-center gap-2 text-slate-300 text-xs font-bold uppercase tracking-wide">
+              <User size={14}/> <span>{book.currentOwner}</span>
+              <span className="mx-1">•</span>
+              <MapPin size={14}/> <span>Available</span>
+            </div>
           </div>
         </div>
 
-        <div className="p-8 bg-white max-h-[70dvh] overflow-y-auto no-scrollbar text-left">
-          <h2 className="text-3xl font-black mb-1 uppercase tracking-tighter text-slate-900">{book.title}</h2>
-          <div className="text-indigo-600 font-black italic text-xs mb-8 uppercase tracking-widest text-left">By {book.author}</div>
+        {/* --- CONTENT AREA --- */}
+        <div className="flex-1 overflow-y-auto bg-white relative -mt-6 rounded-t-[2rem] z-10 px-6 pt-8 pb-32">
           
-          {/* Condition Note */}
-          {book.remark && (
-            <div className="mb-8 p-6 bg-amber-50 border-2 border-amber-100 rounded-[2rem] relative">
-              <StickyNote className="text-amber-400 absolute -top-3 -left-2 rotate-[-12deg]" size={28}/>
-              <p className="text-[10px] font-black text-amber-600 uppercase mb-2">Condition Note:</p>
-              <p className="text-sm font-bold text-slate-700 italic">"{book.remark}"</p>
+          {/* A. OWNER DASHBOARD (Inbox) */}
+          {isOwner ? (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                  <Shield className="text-indigo-600" size={20}/> Manage Requests
+                </h3>
+                <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold">{waitlist.length} Pending</span>
+              </div>
+
+              {waitlist.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-300 space-y-4 border-2 border-dashed border-slate-100 rounded-3xl">
+                  <MessageCircle size={48} className="opacity-20"/>
+                  <p className="font-bold text-sm">No requests yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {waitlist.map((req, idx) => (
+                    <div key={idx} className="bg-white p-5 rounded-3xl shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-slate-100">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200">
+                            {req.name ? req.name[0] : 'U'}
+                          </div>
+                          <div>
+                            <p className="font-black text-slate-800 text-sm">{req.name}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">{req.date}</p>
+                          </div>
+                        </div>
+                        {req.mobile && (
+                          <a href={`tel:${req.mobile}`} className="bg-green-100 text-green-700 p-2 rounded-xl active:scale-90 transition-all">
+                            <Phone size={18}/>
+                          </a>
+                        )}
+                      </div>
+                      
+                      <div className="bg-slate-50 p-4 rounded-2xl rounded-tl-none text-xs font-medium text-slate-600 mb-4 border border-slate-100 ml-4 relative">
+                        "{req.message}"
+                      </div>
+
+                      {req.ownerReply ? (
+                        <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
+                          <CheckCircle size={14}/> Sent: {req.ownerReply}
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input 
+                            placeholder="Type a reply..." 
+                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-indigo-500 transition-all"
+                            onChange={e => setReply(e.target.value)}
+                          />
+                          <button 
+                            onClick={() => onReply(book, req.uid, reply)}
+                            className="bg-indigo-600 text-white p-3 rounded-xl active:scale-90 transition-all shadow-lg shadow-indigo-200"
+                          >
+                            <Send size={16}/>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* B. BORROWER VIEW (Chat Interface) */
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+              
+              <div className="bg-gradient-to-br from-slate-50 to-white p-6 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-5"><MessageCircle size={100}/></div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Condition & Note</p>
+                <p className="text-slate-700 font-medium italic text-sm leading-relaxed relative z-10">
+                  "{book.remark || "No specific details provided by owner."}"
+                </p>
+              </div>
+
+              {myRequest ? (
+                <div className="bg-indigo-600 text-white p-8 rounded-[2.5rem] text-center space-y-4 shadow-xl shadow-indigo-200 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/10 to-transparent"/>
+                  <div className="w-16 h-16 bg-white/20 backdrop-blur rounded-full flex items-center justify-center mx-auto mb-2 text-white border border-white/30">
+                    <CheckCircle size={32}/>
+                  </div>
+                  <div>
+                    <h3 className="font-black text-2xl">Request Sent!</h3>
+                    <p className="text-indigo-200 text-xs font-medium mt-1">Wait for {book.currentOwner} to reply.</p>
+                  </div>
+                  
+                  {myRequest.ownerReply && (
+                    <div className="bg-white text-slate-900 p-4 rounded-2xl shadow-lg mt-6 text-left animate-in zoom-in">
+                      <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Reply from Owner</p>
+                      <p className="font-bold text-sm">{myRequest.ownerReply}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="h-px bg-slate-200 flex-1"/>
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Send Request</span>
+                    <div className="h-px bg-slate-200 flex-1"/>
+                  </div>
+                  
+                  <textarea 
+                    placeholder={`Hi ${book.currentOwner}, is this book available?`} 
+                    className="w-full p-6 bg-slate-50 rounded-[2rem] text-sm font-bold border-2 border-transparent outline-none focus:bg-white focus:border-indigo-500 focus:shadow-xl transition-all h-36 resize-none placeholder:text-slate-300"
+                    onChange={e => setMsg(e.target.value)}
+                  />
+                  
+                  <p className="text-[10px] text-center text-slate-400 font-medium">
+                    Your number will be shared securely.
+                  </p>
+                </div>
+              )}
             </div>
           )}
+        </div>
 
-          {/* --- BORROWER FLOW --- */}
-          {!isOwner && !hasRequested && book.handoverStatus === 'available' && (
-            <div className="mb-10 p-6 bg-indigo-50 rounded-[2.5rem] border border-indigo-100">
-              <p className="text-[10px] font-black uppercase text-indigo-600 mb-4 flex items-center gap-2"><Plus size={14}/> Request this book</p>
-              <textarea 
-                className="w-full p-4 bg-white border rounded-2xl text-sm outline-none font-bold mb-4" 
-                placeholder="Why do you need this book?..."
-                onChange={(e) => setMsg(e.target.value)}
-              />
-              <button 
-                onClick={() => onBorrow(msg)}
-                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all"
+        {/* --- BOTTOM ACTION BAR --- */}
+        <div className="absolute bottom-0 left-0 w-full p-6 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-50 rounded-t-[2rem]">
+          {hasPower ? (
+            <div className="flex gap-2">
+               {isAdmin && !isOwner && <div className="bg-rose-100 text-rose-600 px-4 py-4 rounded-2xl font-black text-xs flex items-center border border-rose-200">ADMIN</div>}
+               <button 
+                onClick={() => {
+                  if(window.confirm(isAdmin ? "ADMIN: Delete this book?" : "Delete your listing?")) onDelete();
+                }}
+                className="flex-1 bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase flex items-center justify-center gap-2 hover:bg-rose-50 hover:text-rose-500 transition-colors active:scale-95"
               >
-                Send Request
+                <Trash2 size={20}/> Delete Listing
               </button>
             </div>
+          ) : !myRequest ? (
+            <button 
+              onClick={() => onBorrow(book, msg)}
+              disabled={!msg.trim()}
+              className={`w-full py-4 rounded-2xl font-black uppercase shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 ${msg.trim() ? 'bg-indigo-600 text-white shadow-indigo-200' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+            >
+              <Send size={20}/> Send Request
+            </button>
+          ) : (
+             <div className="text-center text-xs font-bold text-indigo-400 uppercase tracking-widest py-3 bg-indigo-50 rounded-xl border border-indigo-100">
+               Request Status Above
+             </div>
           )}
-
-          {/* --- MESSAGING & STATUS --- */}
-          {!isOwner && hasRequested && (
-            <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200 mb-10">
-              <p className="text-[10px] font-black uppercase text-indigo-600 mb-4 flex items-center gap-2"><MessageSquare size={14}/> Conversation</p>
-              <div className="bg-white p-4 rounded-2xl border mb-3 text-right text-xs font-bold text-slate-400 italic">Me: {myRequest.message}</div>
-              {myRequest.ownerReply && (
-                <div className="bg-indigo-600 p-4 rounded-2xl text-white text-sm font-bold italic animate-in zoom-in-95">"{myRequest.ownerReply}"</div>
-              )}
-              {book.handoverStatus === 'confirming_receipt' && book.pendingRequesterId === user.uid && (
-                <button onClick={onConfirm} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg mt-6 flex items-center justify-center gap-2">
-                  <CheckCircle2 size={16}/> I Received this Book
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* --- OWNER WAITLIST --- */}
-          {isOwner && book.waitlist?.length > 0 && (
-            <div className="space-y-6 mb-10">
-              <p className="text-[10px] font-black uppercase text-indigo-600 flex items-center gap-2"><Users size={14}/> Student Waitlist ({book.waitlist.length})</p>
-              {book.waitlist.map((req, i) => (
-                <div key={i} className="bg-slate-50 p-5 rounded-[2.5rem] border border-slate-200">
-                  <div className="flex justify-between items-start mb-3">
-                    <div><div className="font-black text-sm uppercase text-slate-800">@{req.name}</div><div className="text-[9px] text-slate-400 font-bold">{req.contact}</div></div>
-                    {req.status === 'pending' && (
-                      <button onClick={() => onApprove(req)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-md">Approve</button>
-                    )}
-                  </div>
-                  <div className="bg-white p-4 rounded-2xl border text-xs font-bold text-slate-600 mb-4 italic">"{req.message}"</div>
-                  <div className="flex gap-2">
-                    <input className="flex-1 p-3 bg-white border rounded-xl text-xs outline-none" placeholder="Reply to student..." onChange={(e) => setReply(e.target.value)} />
-                    <button onClick={() => onReply(req.uid, reply)} className="bg-slate-900 text-white p-3 rounded-xl"><Send size={16}/></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Handover Timeline */}
-          <div className="space-y-3 mt-6">
-            <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><History size={16}/> History</p>
-            {[...(book.history || [])].reverse().map((h, i) => (
-              <div key={i} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border transition-all hover:bg-white shadow-sm">
-                <div className="font-black text-[11px] uppercase text-slate-700">{h.owner}</div>
-                <div className="text-[8px] font-bold text-slate-400 uppercase flex items-center gap-1"><Calendar size={10}/> {h.date} • {h.action}</div>
-              </div>
-            ))}
-          </div>
         </div>
+
       </div>
     </div>
   );

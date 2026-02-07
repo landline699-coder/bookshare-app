@@ -1,81 +1,106 @@
-// src/components/Auth.js
+// src/components/Auth.jsx
 import React, { useState, useEffect } from 'react';
-import { Quote, BookOpen } from 'lucide-react';
+import { BookOpen, ShieldCheck, User, Lock, ArrowRight } from 'lucide-react';
 
-const AUTH_QUOTES = [
-  "Share books. Share life lessons.",
-  "Donate books—knowledge reused is impact multiplied.",
-  "Your notes can teach beyond you.",
-  "A wider reading community creates a stronger society."
+const QUOTES = [
+  { text: "Share a book, share a world.", author: "Community" },
+  { text: "Old books can change new lives.", author: "BookShare" },
+  { text: "Knowledge grows by sharing.", author: "Proverb" }
 ];
 
-export default function Auth({ onLogin, onRegister, onAdminLogin, authError, isLoading }) {
-  const [view, setView] = useState('login');
-  const [activeQuote, setActiveQuote] = useState(0);
-  const [form, setForm] = useState({ name: '', mobile: '', mpin: '', studentClass: '10th', adminId: '', adminKey: '' });
+export default function Auth({ onRegister, onLogin, onAdminLogin }) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [form, setForm] = useState({ name: '', mobile: '', mpin: '', studentClass: '10th' });
+  const [quoteIndex, setQuoteIndex] = useState(0);
 
   useEffect(() => {
-    const timer = setInterval(() => setActiveQuote((p) => (p + 1) % AUTH_QUOTES.length), 4000);
+    const timer = setInterval(() => setQuoteIndex((p) => (p + 1) % QUOTES.length), 3000);
     return () => clearInterval(timer);
   }, []);
 
-  const handleInput = (field, val, type) => {
-    let cleanVal = val;
-    if (type === 'alpha') cleanVal = val.replace(/[^a-zA-Z\s]/g, '');
-    if (type === 'num') cleanVal = val.replace(/\D/g, '').slice(0, 10);
-    if (type === 'pin') cleanVal = val.replace(/\D/g, '').slice(0, 4);
-    setForm({ ...form, [field]: cleanVal });
+  // 🛡️ Logic to allow ONLY Numbers
+  const handleNumInput = (e, field) => {
+    const val = e.target.value.replace(/\D/g, ''); // Remove non-digits
+    setForm({ ...form, [field]: val });
+  };
+
+  const handleSubmit = () => {
+    if (isAdminMode) {
+      if (form.mpin === 'admin9893@') onAdminLogin('admin', form.mpin);
+      else alert("Wrong Admin Password!");
+      return;
+    }
+    if (isLogin) onLogin(form.mobile, form.mpin);
+    else onRegister(form);
   };
 
   return (
-    <div className="fixed inset-0 bg-white z-[300] flex flex-col items-center justify-center p-6 overflow-y-auto">
-      <div className="max-w-sm w-full text-center">
-        {/* Animated Quote Box */}
-        <div className="relative overflow-hidden mb-10 p-8 rounded-[2.5rem] bg-gradient-to-br from-indigo-600 to-purple-600 shadow-2xl text-white italic font-black transition-all">
-          <Quote size={24} className="opacity-30 mb-3 mx-auto" />
-          <p className="min-h-[3rem] animate-in fade-in duration-1000">"{AUTH_QUOTES[activeQuote]}"</p>
+    <div className={`fixed inset-0 z-[60] flex flex-col items-center justify-center p-6 text-white transition-colors duration-500 ${isAdminMode ? 'bg-slate-900' : 'bg-indigo-600'}`}>
+      
+      <button onClick={() => setIsAdminMode(!isAdminMode)} className="absolute top-6 right-6 bg-white/20 p-2 rounded-full backdrop-blur-md active:scale-90 transition-all border border-white/10">
+        {isAdminMode ? <User size={24}/> : <ShieldCheck size={24}/>}
+      </button>
+
+      <div className="flex-1 flex flex-col items-center justify-center space-y-8">
+        <div className="bg-white/20 p-6 rounded-[2.5rem] backdrop-blur shadow-2xl">
+          {isAdminMode ? <ShieldCheck size={48} /> : <BookOpen size={48} />}
         </div>
+        {!isAdminMode && (
+          <div className="h-16 text-center animate-in fade-in">
+             <p className="text-xl font-black uppercase tracking-tight">"{QUOTES[quoteIndex].text}"</p>
+          </div>
+        )}
+      </div>
 
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-8">
-          {['login', 'register', 'admin'].map(v => (
-            <button key={v} onClick={() => setView(v)} className={`flex-1 py-3 rounded-xl font-bold uppercase text-[9px] ${view === v ? 'bg-white shadow text-indigo-600' : 'text-slate-400'}`}>{v}</button>
-          ))}
-        </div>
-
-        {authError && <div className="mb-4 text-rose-600 font-bold text-[10px] uppercase p-3 rounded-xl bg-rose-50 border border-rose-100">{authError}</div>}
-
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          if (view === 'login') onLogin(form.mobile, form.mpin);
-          else if (view === 'register') onRegister(form);
-          else onAdminLogin(form.adminId, form.adminKey);
-        }} className="space-y-4 text-left">
-          
-          {view === 'register' && (
+      <div className="bg-white w-full max-w-sm p-8 rounded-[3rem] shadow-2xl text-slate-800 animate-in slide-in-from-bottom">
+        <h2 className="text-2xl font-black uppercase tracking-tighter text-indigo-900 mb-6 flex items-center gap-2">
+          {isAdminMode ? <><Lock className="text-rose-500"/> Admin Access</> : (isLogin ? "Student Login" : "New Account")}
+        </h2>
+        
+        <div className="space-y-4">
+          {!isAdminMode && !isLogin && (
             <>
-              <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold border focus:border-indigo-300" placeholder="Full Name" value={form.name} onChange={e => handleInput('name', e.target.value, 'alpha')} required />
-              <select className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold border" value={form.studentClass} onChange={e => setForm({...form, studentClass: e.target.value})}>
-                {["6th", "7th", "8th", "9th", "10th", "11th", "12th", "College"].map(c => <option key={c} value={c}>{c}</option>)}
+              <input placeholder="Full Name" className="w-full p-4 bg-indigo-50 rounded-2xl font-bold outline-none" onChange={e => setForm({...form, name: e.target.value})} />
+              <select className="w-full p-4 bg-indigo-50 rounded-2xl font-bold outline-none" onChange={e => setForm({...form, studentClass: e.target.value})}>
+                {["6th","7th","8th","9th","10th","11th","12th","College","Other"].map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </>
           )}
-
-          {view === 'admin' ? (
-            <>
-              <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold border" placeholder="Admin ID" onChange={e => handleInput('adminId', e.target.value)} required />
-              <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold border" type="password" placeholder="Root Key" onChange={e => handleInput('adminKey', e.target.value)} required />
-            </>
-          ) : (
-            <>
-              <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold border" placeholder="Mobile Number" value={view === 'login' ? form.mobile : form.mobile} onChange={e => handleInput('mobile', e.target.value, 'num')} required />
-              <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none tracking-widest font-black border" type="password" placeholder="PIN" value={form.mpin} onChange={e => handleInput('mpin', e.target.value, 'pin')} required />
-            </>
+          
+          {/* ✅ Mobile: Only Numbers allowed */}
+          {!isAdminMode && (
+            <input 
+              placeholder="Mobile Number" 
+              type="tel" 
+              maxLength={10} 
+              value={form.mobile}
+              className="w-full p-4 bg-indigo-50 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+              onChange={(e) => handleNumInput(e, 'mobile')} 
+            />
           )}
 
-          <button disabled={isLoading} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all">
-            {isLoading ? "Processing..." : view === 'admin' ? "Unlock Root" : view}
+          {/* ✅ PIN: Only Numbers allowed (unless Admin) */}
+          <input 
+            placeholder={isAdminMode ? "Enter Admin Password" : "Set 4-Digit PIN"} 
+            type={isAdminMode ? "text" : "tel"}
+            maxLength={isAdminMode ? 20 : 4} 
+            value={form.mpin}
+            className={`w-full p-4 rounded-2xl font-bold border-none outline-none ring-2 focus:ring-4 transition-all ${isAdminMode ? 'bg-slate-100 ring-slate-200' : 'bg-indigo-50 ring-indigo-50 focus:ring-indigo-100'}`}
+            onChange={(e) => isAdminMode ? setForm({...form, mpin: e.target.value}) : handleNumInput(e, 'mpin')} 
+          />
+          
+          <button onClick={handleSubmit} className={`w-full text-white p-5 rounded-2xl font-black shadow-xl active:scale-95 transition-all flex justify-between items-center ${isAdminMode ? 'bg-slate-800 shadow-slate-300' : 'bg-indigo-600 shadow-indigo-200'}`}>
+            <span>{isAdminMode ? "ACCESS PANEL" : (isLogin ? "UNLOCK LIBRARY" : "CREATE PROFILE")}</span>
+            <ArrowRight/>
           </button>
-        </form>
+        </div>
+        
+        {!isAdminMode && (
+          <p onClick={() => setIsLogin(!isLogin)} className="text-center text-xs font-bold text-slate-400 mt-6 uppercase mt-4">
+            {isLogin ? "New here? Register" : "Have account? Login"}
+          </p>
+        )}
       </div>
     </div>
   );

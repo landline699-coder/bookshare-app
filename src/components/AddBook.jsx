@@ -1,70 +1,63 @@
-// src/components/AddBook.jsx
 import React, { useState, useRef } from 'react';
-import { Camera, X, PlusCircle } from 'lucide-react';
+import { Camera, X, Check } from 'lucide-react';
 
 export default function AddBook({ onPublish, onClose, categories, classes }) {
-  const [form, setForm] = useState({ title: '', author: '', remark: '', category: 'Maths', bookClass: '10th' });
-  const [imgUrl, setImgUrl] = useState('');
-  const [isPublishing, setIsPublishing] = useState(false);
+  const [form, setForm] = useState({ title: '', author: '', category: 'Maths', bookClass: '10th', remark: '' });
+  const [image, setImage] = useState(null);
+  const [loading, setLoading] = useState(false);
   const fileRef = useRef(null);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim() || isPublishing) return;
-    setIsPublishing(true);
-    try {
-      await onPublish({ ...form, imageUrl: imgUrl });
-      onClose();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsPublishing(false);
+  const handlePublish = async () => {
+    if (!form.title) return alert("Title required");
+    setLoading(true);
+    await onPublish({ ...form, imageUrl: image });
+    setLoading(false);
+  };
+
+  // 2. Attractive Image Logic
+  const handleImage = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setImage(reader.result);
+      reader.readAsDataURL(file);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/90 z-[150] flex items-center justify-center p-4 overflow-y-auto">
-      <form onSubmit={handleSubmit} className="bg-white w-full max-w-md rounded-[3rem] p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-black uppercase text-slate-900">List Your Book</h2>
-          <button type="button" onClick={onClose} className="p-2 bg-slate-100 rounded-xl"><X size={20}/></button>
+    <div className="fixed inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-bottom">
+      <div className="p-4 flex justify-between items-center border-b">
+        <h2 className="font-black text-xl">Sell/Donate Book</h2>
+        <button onClick={onClose}><X/></button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Image Upload Area */}
+        <div onClick={()=>fileRef.current.click()} className="aspect-video bg-slate-100 rounded-2xl border-2 border-dashed border-indigo-200 flex flex-col items-center justify-center overflow-hidden relative">
+          {image ? <img src={image} className="w-full h-full object-cover"/> : <div className="text-center text-indigo-400"><Camera size={32}/><p className="text-xs font-bold mt-2">ADD COVER PHOTO</p></div>}
+          <input type="file" ref={fileRef} className="hidden" accept="image/*" onChange={handleImage}/>
+        </div>
+
+        <input placeholder="Book Name" className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" onChange={e=>setForm({...form, title:e.target.value})}/>
+        
+        {/* 3. Category & Class Dropdowns */}
+        <div className="grid grid-cols-2 gap-4">
+          <select className="p-4 bg-slate-50 rounded-xl font-bold" onChange={e=>setForm({...form, category:e.target.value})}>
+            {categories.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+          <select className="p-4 bg-slate-50 rounded-xl font-bold" onChange={e=>setForm({...form, bookClass:e.target.value})}>
+            {classes.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         
-        <div onClick={() => fileRef.current.click()} className="aspect-video bg-slate-100 border-4 border-dashed rounded-[2rem] flex flex-col items-center justify-center cursor-pointer mb-6 overflow-hidden">
-          {imgUrl ? <img src={imgUrl} className="w-full h-full object-cover" /> : <div className="text-center"><Camera className="text-slate-300 mx-auto" size={40} /><p className="text-[10px] font-bold text-slate-400 mt-2 uppercase">Tap to Take Photo</p></div>}
-          <input type="file" ref={fileRef} className="hidden" accept="image/*" capture="environment" onChange={(e) => {
-             const file = e.target.files[0];
-             const reader = new FileReader();
-             reader.onloadend = () => setImgUrl(reader.result);
-             reader.readAsDataURL(file);
-          }} />
-        </div>
+        <textarea placeholder="Condition (e.g. New, Old, Pages missing)" className="w-full p-4 bg-slate-50 rounded-xl font-bold h-32 resize-none outline-none" onChange={e=>setForm({...form, remark:e.target.value})}/>
+      </div>
 
-        <div className="space-y-4 text-left">
-          <input required placeholder="Book Title" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-none outline-indigo-500" onChange={e => setForm({...form, title: e.target.value})} />
-          <input placeholder="Author Name" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-none outline-indigo-500" onChange={e => setForm({...form, author: e.target.value})} />
-          
-          <div className="grid grid-cols-2 gap-3">
-            <select className="p-4 bg-slate-50 rounded-2xl font-black uppercase text-[10px]" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select className="p-4 bg-slate-50 rounded-2xl font-black uppercase text-[10px]" value={form.bookClass} onChange={e => setForm({...form, bookClass: e.target.value})}>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-
-          {/* ✅ Wapis laya gaya Note Feature */}
-          <textarea 
-            placeholder="Write something about book (e.g. New condition, 2 pages missing...)" 
-            className="w-full h-24 p-4 bg-slate-50 rounded-2xl font-bold text-sm border-none outline-indigo-500 resize-none"
-            onChange={e => setForm({...form, remark: e.target.value})}
-          />
-
-          <button disabled={isPublishing} className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
-            <PlusCircle size={20}/> {isPublishing ? "Publishing..." : "Add Book Now"}
-          </button>
-        </div>
-      </form>
+      <div className="p-4 border-t">
+        <button onClick={handlePublish} disabled={loading} className="w-full bg-indigo-600 text-white p-4 rounded-xl font-black flex justify-center gap-2">
+          {loading ? "Publishing..." : <><Check/> PUBLISH BOOK</>}
+        </button>
+      </div>
     </div>
   );
 }
