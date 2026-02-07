@@ -27,7 +27,7 @@ export default function AddBook({ onPublish, onClose, categories, classes }) {
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-bottom">
       <div className="p-4 flex justify-between items-center border-b">
-        <h2 className="font-black text-xl">Sell/Donate Book</h2>
+        <h2 className="font-black text-xl">ADD BOOK</h2>
         <button onClick={onClose}><X/></button>
       </div>
       
@@ -39,7 +39,7 @@ export default function AddBook({ onPublish, onClose, categories, classes }) {
         </div>
 
         <input placeholder="Book Name" className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" onChange={e=>setForm({...form, title:e.target.value})}/>
-        
+        <input placeholder="Author Name" className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" onChange={e=>setForm({...form, title:e.target.value})}/>
         {/* 3. Category & Class Dropdowns */}
         <div className="grid grid-cols-2 gap-4">
           <select className="p-4 bg-slate-50 rounded-xl font-bold" onChange={e=>setForm({...form, category:e.target.value})}>
@@ -50,7 +50,7 @@ export default function AddBook({ onPublish, onClose, categories, classes }) {
           </select>
         </div>
         
-        <textarea placeholder="Condition (e.g. New, Old, Pages missing)" className="w-full p-4 bg-slate-50 rounded-xl font-bold h-32 resize-none outline-none" onChange={e=>setForm({...form, remark:e.target.value})}/>
+        <textarea placeholder="Write Msg for Other reader about book and our experience also Condition of book (e.g. New, Old, Pages missing)" className="w-full p-4 bg-slate-50 rounded-xl font-bold h-32 resize-none outline-none" onChange={e=>setForm({...form, remark:e.target.value})}/>
       </div>
 
       <div className="p-4 border-t">

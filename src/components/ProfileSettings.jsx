@@ -100,7 +100,7 @@ export default function ProfileSettings({ profile, onClose, onUpdate, isAdmin })
              <div className="space-y-1">
                <label className="text-xs font-black text-slate-400 uppercase ml-2">Student Class</label>
                <select 
-                  value={data.studentClass || '10th'} 
+                  value={data.studentClass || 'Your class'} 
                   onChange={e => setData({...data, studentClass: e.target.value})}
                   className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-indigo-500"
                >
