@@ -115,9 +115,19 @@ export default function App() {
     });
   };
 
-  // ✅ 4. BORROW FUNCTION (Message ke saath)
+  // src/App.jsx के अंदर handleBorrow फंक्शन को इससे बदलें:
+
+  // ✅ 4. BORROW FUNCTION (Security Check Added)
   const handleBorrow = async (book, message) => {
+    // 1. Check Login
     if(!profile) return setToast({type:'error', message:'Please Login First'});
+    
+    // 🛡️ 2. SECURITY CHECK: Owner Check (Ye naya code hai)
+    if (user.uid === book.ownerId) {
+      setToast({ type: 'error', message: "You cannot borrow your own book! 🚫" });
+      return; // Yahan se function wapis laut jayega
+    }
+
     try {
       const bookRef = doc(db, 'artifacts', appId, 'public', 'data', 'books', book.id);
       await updateDoc(bookRef, {
@@ -136,7 +146,6 @@ export default function App() {
       setToast({ type: 'error', message: 'Request Failed' });
     }
   };
-
   // ✅ 5. REPLY FUNCTION (Jo Error de raha tha)
   const handleReply = async (book, requesterUid, replyText) => {
     try {
