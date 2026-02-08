@@ -1,6 +1,6 @@
 /**
- * 📚 BookShare Pro - v8.6 (ULTIMATE EDITION)
- * Features: Excel Export, Netflix UI, Strict Login, History, Admin Security
+ * 📚 BookShare Pro - v8.7 (Updated Categories & Debugging)
+ * Features: New Categories, Error Reporting, Excel Export, Netflix UI, Strict Login
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -37,8 +37,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'school-bookshare-production-v1';
 
+// ✅ UPDATED CATEGORIES LIST
 const CLASSES = ["6th", "7th", "8th", "9th", "10th", "11th", "12th", "College", "Other"];
-const CATEGORIES = ["Maths", "Biology", "Science", "Commerce", "Arts", "Hindi", "English", "Novel", "Notes", "Other"];
+const CATEGORIES = ["Maths", "Biology", "Science", "Commerce", "Arts", "Hindi", "English", "Novel", "Notes", "Computer", "Self Help & Development", "Other"];
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -96,21 +97,20 @@ export default function App() {
 
   // --- ACTIONS ---
 
-  // ✅ NEW: EXCEL REPORT EXPORT (Admin Only)
+  // EXCEL REPORT EXPORT (Admin Only)
   const exportReport = () => {
     if (!isAdminAuth) return;
     if (books.length === 0) return setToast({type: 'error', message: 'No data to export'});
 
-    // CSV Headers
-    let csvContent = "Book Title,Category,Class,Owner Name,Owner Mobile,Status,Requests Count,Date Added\n";
+    let csvContent = "Book Title,Category,Class,Language,Owner Name,Owner Mobile,Status,Requests Count,Date Added\n";
 
-    // Data Loop
     books.forEach(b => {
-      const clean = (t) => t ? `"${t.toString().replace(/"/g, '""')}"` : "-"; // Handle commas/quotes
+      const clean = (t) => t ? `"${t.toString().replace(/"/g, '""')}"` : "-"; 
       const row = [
         clean(b.title),
         clean(b.category),
         clean(b.bookClass),
+        clean(b.language || "English"), // Added Language to Export
         clean(b.currentOwner),
         clean(b.contact),
         b.waitlist?.length > 0 ? "Requested" : "Available",
@@ -120,7 +120,6 @@ export default function App() {
       csvContent += row.join(",") + "\n";
     });
 
-    // Download Logic
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -132,17 +131,30 @@ export default function App() {
     setToast({ type: 'success', message: 'Report Downloaded!' });
   };
 
+  // ✅ IMPROVED PUBLISH FUNCTION (With Error Debugging)
   const handlePublishBook = async (bookData) => {
+    if (!profile) return setToast({ type: 'error', message: 'Login required to publish!' });
+    
+    setToast({ type: 'success', message: 'Publishing...' }); // Feedback
+
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'books'), {
-        ...bookData,
-        type: appMode || 'Sharing', ownerId: user.uid, currentOwner: profile.name, contact: profile.mobile,
-        handoverStatus: 'available', createdAt: serverTimestamp(), waitlist: [],
-        // ✅ HISTORY SAVED HERE
+        ...bookData, // Contains title, category, class, AND language now
+        type: appMode || 'Sharing', 
+        ownerId: user.uid, 
+        currentOwner: profile.name, 
+        contact: profile.mobile,
+        handoverStatus: 'available', 
+        createdAt: serverTimestamp(), 
+        waitlist: [],
         history: [{ owner: profile.name, date: new Date().toLocaleDateString(), action: 'Listed' }]
       });
-      setIsAddingBook(false); setToast({ type: 'success', message: 'Book Published!' });
-    } catch (e) { setToast({ type: 'error', message: 'Failed to Publish' }); }
+      setIsAddingBook(false); 
+      setToast({ type: 'success', message: 'Book Published Successfully! 🎉' });
+    } catch (e) { 
+      console.error("Publish Error:", e);
+      setToast({ type: 'error', message: `Failed: ${e.message}` }); // Show real error
+    }
   };
 
   const handleBorrow = async (book, message) => {
@@ -206,7 +218,10 @@ export default function App() {
     <div className="fixed inset-0 bg-slate-50 font-sans flex flex-col overflow-hidden select-none">
       
       {showProfile && <ProfileSettings profile={profile} isAdmin={isAdminAuth} onClose={()=>setShowProfile(false)} onUpdate={async(d)=>{await updateDoc(doc(db,'artifacts',appId,'users',user.uid,'profile','data'),d); setProfile(d); setToast({type:'success', message:'Updated!'});}} />}
+      
+      {/* Pass updated CATEGORIES to AddBook */}
       {isAddingBook && <AddBook onPublish={handlePublishBook} onClose={()=>setIsAddingBook(false)} categories={CATEGORIES} classes={CLASSES} />}
+      
       {showCommunity && <Community posts={communityPosts} onClose={()=>setShowCommunity(false)} onPost={async(t)=>{await addDoc(collection(db,'artifacts',appId,'public', 'data', 'community'),{name:profile.name, text:t, createdAt: serverTimestamp(), date: new Date().toLocaleDateString()});}} />}
       
       {selectedBook && (

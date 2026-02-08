@@ -1,62 +1,136 @@
-import React, { useState, useRef } from 'react';
-import { Camera, X, Check } from 'lucide-react';
+// src/components/AddBook.jsx
+import React, { useState } from 'react';
+import { X, Camera, Book, Languages } from 'lucide-react';
 
 export default function AddBook({ onPublish, onClose, categories, classes }) {
-  const [form, setForm] = useState({ title: '', author: '', category: 'Maths', bookClass: '10th', remark: '' });
-  const [image, setImage] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const fileRef = useRef(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    category: categories[0],
+    bookClass: classes[0],
+    language: 'English', // ✅ Default Language
+    imageUrl: '', // Optional
+    remark: ''
+  });
 
-  const handlePublish = async () => {
-    if (!form.title) return alert("Title required");
-    setLoading(true);
-    await onPublish({ ...form, imageUrl: image });
-    setLoading(false);
-  };
-
-  // 2. Attractive Image Logic
-  const handleImage = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setImage(reader.result);
-      reader.readAsDataURL(file);
-    }
+  const handleSubmit = () => {
+    if (!formData.title.trim()) return alert("Please enter book title");
+    onPublish(formData);
   };
 
   return (
-    <div className="fixed inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-bottom">
-      <div className="p-4 flex justify-between items-center border-b">
-        <h2 className="font-black text-xl">ADD BOOK</h2>
-        <button onClick={onClose}><X/></button>
-      </div>
-      
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Image Upload Area */}
-        <div onClick={()=>fileRef.current.click()} className="aspect-video bg-slate-100 rounded-2xl border-2 border-dashed border-indigo-200 flex flex-col items-center justify-center overflow-hidden relative">
-          {image ? <img src={image} className="w-full h-full object-cover"/> : <div className="text-center text-indigo-400"><Camera size={32}/><p className="text-xs font-bold mt-2">ADD COVER PHOTO</p></div>}
-          <input type="file" ref={fileRef} className="hidden" accept="image/*" onChange={handleImage}/>
-        </div>
-
-        <input placeholder="Book Name" className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" onChange={e=>setForm({...form, title:e.target.value})}/>
-        <input placeholder="Author Name" className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" onChange={e=>setForm({...form, title:e.target.value})}/>
-        {/* 3. Category & Class Dropdowns */}
-        <div className="grid grid-cols-2 gap-4">
-          <select className="p-4 bg-slate-50 rounded-xl font-bold" onChange={e=>setForm({...form, category:e.target.value})}>
-            {categories.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-          <select className="p-4 bg-slate-50 rounded-xl font-bold" onChange={e=>setForm({...form, bookClass:e.target.value})}>
-            {classes.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-md rounded-[2.5rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
         
-        <textarea placeholder="Write Msg for Other reader about book and our experience also Condition of book (e.g. New, Old, Pages missing)" className="w-full p-4 bg-slate-50 rounded-xl font-bold h-32 resize-none outline-none" onChange={e=>setForm({...form, remark:e.target.value})}/>
-      </div>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <Book className="text-indigo-600"/> Add Book
+          </h2>
+          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+            <X size={20} className="text-slate-500"/>
+          </button>
+        </div>
 
-      <div className="p-4 border-t">
-        <button onClick={handlePublish} disabled={loading} className="w-full bg-indigo-600 text-white p-4 rounded-xl font-black flex justify-center gap-2">
-          {loading ? "Publishing..." : <><Check/> PUBLISH BOOK</>}
+        {/* Scrollable Form Area */}
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+          
+          {/* Title Input */}
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2">Book Title</label>
+            <input 
+              className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 transition-all border border-transparent focus:border-indigo-200"
+              placeholder="e.g. Science NCERT"
+              value={formData.title}
+              onChange={(e) => setFormData({...formData, title: e.target.value})}
+            />
+          </div>
+
+          {/* Grid for Dropdowns */}
+          <div className="grid grid-cols-2 gap-4">
+            
+            {/* Category */}
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2">Category</label>
+              <select 
+                className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-slate-700 outline-none appearance-none"
+                value={formData.category}
+                onChange={(e) => setFormData({...formData, category: e.target.value})}
+              >
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            {/* Class */}
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2">Class</label>
+              <select 
+                className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-slate-700 outline-none appearance-none"
+                value={formData.bookClass}
+                onChange={(e) => setFormData({...formData, bookClass: e.target.value})}
+              >
+                {classes.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* ✅ NEW: LANGUAGE OPTION */}
+          <div>
+             <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2 flex items-center gap-1">
+               <Languages size={12}/> Language
+             </label>
+             <div className="flex gap-2">
+               {['English', 'Hindi'].map(lang => (
+                 <button 
+                   key={lang}
+                   onClick={() => setFormData({...formData, language: lang})}
+                   className={`flex-1 p-3 rounded-2xl font-bold text-sm transition-all border-2 ${
+                     formData.language === lang 
+                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200' 
+                       : 'bg-white text-slate-500 border-slate-100 hover:border-indigo-100'
+                   }`}
+                 >
+                   {lang}
+                 </button>
+               ))}
+             </div>
+          </div>
+
+          {/* Image URL (Optional) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2">Cover Image URL (Optional)</label>
+            <div className="relative">
+              <Camera className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18}/>
+              <input 
+                className="w-full bg-slate-50 p-4 pl-12 rounded-2xl font-medium text-sm text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                placeholder="Paste image link..."
+                value={formData.imageUrl}
+                onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+              />
+            </div>
+          </div>
+
+          {/* Remark / Description */}
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2">Note (Condition, etc.)</label>
+            <textarea 
+              className="w-full bg-slate-50 p-4 rounded-2xl font-medium text-sm text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100 transition-all resize-none"
+              rows="3"
+              placeholder="e.g. Pages are slightly torn..."
+              value={formData.remark}
+              onChange={(e) => setFormData({...formData, remark: e.target.value})}
+            />
+          </div>
+
+        </div>
+
+        {/* Submit Button */}
+        <button 
+          onClick={handleSubmit} 
+          className="w-full bg-slate-900 text-white p-5 rounded-2xl font-black uppercase tracking-widest mt-6 shadow-xl shadow-slate-300 active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-slate-800"
+        >
+          Publish Book <ArrowRight size={18} />
         </button>
+
       </div>
     </div>
   );
