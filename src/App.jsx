@@ -238,6 +238,7 @@ export default function App() {
           book={selectedBook} 
           user={user} 
           profile={profile}
+          classes={CLASSES}
           isAdmin={isAdminAuth} 
           onClose={()=>setSelectedBook(null)} 
           onBorrow={handleBorrow} 
