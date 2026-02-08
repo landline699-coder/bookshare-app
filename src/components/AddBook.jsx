@@ -98,14 +98,26 @@ export default function AddBook({ onPublish, onClose, categories, classes }) {
           {/* Title */}
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2">Book Title</label>
+            
             <input 
               className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-slate-700 outline-none"
               placeholder="e.g. Science NCERT"
               value={formData.title}
               onChange={(e) => setFormData({...formData, title: e.target.value})}
+              
             />
           </div>
-
+<div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-2">Author Name</label>
+            
+            <input 
+              className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-slate-700 outline-none"
+              placeholder="e.g. written by abc"
+              value={formData.title}
+              onChange={(e) => setFormData({...formData, title: e.target.value})}
+              
+            />
+          </div>
           {/* Category & Class */}
           <div className="grid grid-cols-2 gap-4">
             <div>

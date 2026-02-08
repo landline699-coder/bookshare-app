@@ -1,6 +1,6 @@
 /**
- * 📚 BookShare Pro - v8.7 (Updated Categories & Debugging)
- * Features: New Categories, Error Reporting, Excel Export, Netflix UI, Strict Login
+ * 📚 BookShare Pro - v9.2 (Final Master)
+ * Includes: Smart Security (Name+Mobile Check), Notifications, Edit Mode, Badges, Modules
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -10,11 +10,11 @@ import {
   getFirestore, collection, addDoc, onSnapshot, updateDoc, 
   doc, getDoc, setDoc, deleteDoc, serverTimestamp, query, orderBy, arrayUnion 
 } from 'firebase/firestore'; 
-import { 
-  Plus, BookOpen, Search, Users, ChevronLeft, LayoutGrid, LogOut, Heart, UserCircle, Sparkles, ArrowRight, FileSpreadsheet 
-} from 'lucide-react';
+import { ChevronLeft, Search, BookOpen } from 'lucide-react';
 
-// --- COMPONENTS ---
+// --- MODULE IMPORTS ---
+import LandingPage from './components/LandingPage';
+import Navbar from './components/Navbar';
 import Auth from './components/Auth';
 import BookDetails from './components/BookDetails';
 import AddBook from './components/AddBook';
@@ -37,8 +37,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'school-bookshare-production-v1';
 
-// ✅ UPDATED CATEGORIES LIST
-const CLASSES = ["6th", "7th", "8th", "9th", "10th", "11th", "12th", "College", "Other"];
+// ✅ UPDATED LISTS (Added "Everyone")
+const CLASSES = ["Everyone", "6th", "7th", "8th", "9th", "10th", "11th", "12th", "College", "Other"];
 const CATEGORIES = ["Maths", "Biology", "Science", "Commerce", "Arts", "Hindi", "English", "Novel", "Notes", "Computer", "Self Help & Development", "Other"];
 
 export default function App() {
@@ -52,7 +52,6 @@ export default function App() {
   const [communityPosts, setCommunityPosts] = useState([]);
   const [toast, setToast] = useState(null);
   
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
   const [isAddingBook, setIsAddingBook] = useState(false);
   const [showCommunity, setShowCommunity] = useState(false);
@@ -71,14 +70,12 @@ export default function App() {
       }
       setIsDataLoaded(true);
     });
-
     onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'books'), orderBy('createdAt', 'desc')), (s) => setBooks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'community'), orderBy('createdAt', 'desc')), (s) => setCommunityPosts(s.docs.map(d => d.data())));
-
     return () => unsubAuth();
   }, [isAdminAuth]);
 
-  // 2. Mobile Back Logic
+  // 2. Back Button Logic
   useEffect(() => {
     const handleBack = (e) => {
       if (isAddingBook || selectedBook || showCommunity || showProfile || showLogoutConfirm) {
@@ -95,87 +92,101 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleBack);
   }, [isAddingBook, selectedBook, showCommunity, showProfile, showLogoutConfirm, appMode]);
 
+  // ✅ NOTIFICATION LOGIC (For Bell Icon)
+  const myBooksWithRequests = useMemo(() => {
+    if (!user) return [];
+    // Check books owned by this user ID OR matched by Name+Mobile (Smart check for legacy books)
+    return books.filter(b => 
+      (b.ownerId === user.uid || (profile && b.currentOwner === profile.name && b.contact === profile.mobile)) 
+      && b.waitlist && b.waitlist.some(r => r.status === 'pending')
+    );
+  }, [books, user, profile]);
+
   // --- ACTIONS ---
 
-  // EXCEL REPORT EXPORT (Admin Only)
   const exportReport = () => {
     if (!isAdminAuth) return;
-    if (books.length === 0) return setToast({type: 'error', message: 'No data to export'});
-
+    if (books.length === 0) return setToast({type: 'error', message: 'No data'});
     let csvContent = "Book Title,Category,Class,Language,Owner Name,Owner Mobile,Status,Requests Count,Date Added\n";
-
     books.forEach(b => {
       const clean = (t) => t ? `"${t.toString().replace(/"/g, '""')}"` : "-"; 
-      const row = [
-        clean(b.title),
-        clean(b.category),
-        clean(b.bookClass),
-        clean(b.language || "English"), // Added Language to Export
-        clean(b.currentOwner),
-        clean(b.contact),
-        b.waitlist?.length > 0 ? "Requested" : "Available",
-        b.waitlist?.length || 0,
-        b.history?.[0]?.date || "-"
-      ];
+      const row = [clean(b.title), clean(b.category), clean(b.bookClass), clean(b.language), clean(b.currentOwner), clean(b.contact), b.waitlist?.length > 0 ? "Requested" : "Available", b.waitlist?.length || 0, b.history?.[0]?.date || "-"];
       csvContent += row.join(",") + "\n";
     });
-
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `BookShare_Report_${new Date().toLocaleDateString()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const link = document.createElement("a"); link.href = url; link.setAttribute("download", `BookShare_Report.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
     setToast({ type: 'success', message: 'Report Downloaded!' });
   };
 
-  // ✅ IMPROVED PUBLISH FUNCTION (With Error Debugging)
   const handlePublishBook = async (bookData) => {
-    if (!profile) return setToast({ type: 'error', message: 'Login required to publish!' });
-    
-    setToast({ type: 'success', message: 'Publishing...' }); // Feedback
-
+    if (!profile) return setToast({ type: 'error', message: 'Login required!' });
+    setToast({ type: 'success', message: 'Publishing...' });
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'books'), {
-        ...bookData, // Contains title, category, class, AND language now
-        type: appMode || 'Sharing', 
-        ownerId: user.uid, 
-        currentOwner: profile.name, 
-        contact: profile.mobile,
-        handoverStatus: 'available', 
-        createdAt: serverTimestamp(), 
-        waitlist: [],
+        ...bookData, type: appMode || 'Sharing', ownerId: user.uid, currentOwner: profile.name, contact: profile.mobile,
+        handoverStatus: 'available', createdAt: serverTimestamp(), waitlist: [],
         history: [{ owner: profile.name, date: new Date().toLocaleDateString(), action: 'Listed' }]
       });
-      setIsAddingBook(false); 
-      setToast({ type: 'success', message: 'Book Published Successfully! 🎉' });
-    } catch (e) { 
-      console.error("Publish Error:", e);
-      setToast({ type: 'error', message: `Failed: ${e.message}` }); // Show real error
-    }
+      setIsAddingBook(false); setToast({ type: 'success', message: 'Published!' });
+    } catch (e) { setToast({ type: 'error', message: `Failed: ${e.message}` }); }
   };
 
+  // ✅ UPDATE BOOK (EDIT)
+  const handleUpdateBook = async (bookId, updatedData) => {
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', bookId), updatedData);
+      setToast({ type: 'success', message: 'Book Updated!' });
+    } catch (e) { setToast({ type: 'error', message: 'Update Failed' }); }
+  };
+
+  // ✅ SMART SELF-REQUEST BLOCKER
   const handleBorrow = async (book, message) => {
     if(!profile) return setToast({type:'error', message:'Login First'});
-    if (user.uid === book.ownerId) { setToast({ type: 'error', message: "You cannot borrow your own book! 🚫" }); return; }
+    
+    // 🛡️ Security: Check ID match OR Name+Mobile match
+    const isOwnerByUID = user.uid === book.ownerId;
+    const isOwnerByProfile = profile.name === book.currentOwner && profile.mobile === book.contact;
+
+    if (isOwnerByUID || isOwnerByProfile) { 
+      setToast({ type: 'error', message: "You cannot borrow your own book! 🚫" }); 
+      return; 
+    }
+
     try {
-      const bookRef = doc(db, 'artifacts', appId, 'public', 'data', 'books', book.id);
-      await updateDoc(bookRef, {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', book.id), {
         waitlist: arrayUnion({ uid: user.uid, name: profile.name, mobile: profile.mobile, message, date: new Date().toLocaleDateString(), status: 'pending', ownerReply: '' })
       });
       setToast({ type: 'success', message: 'Request Sent!' });
-    } catch (e) { setToast({ type: 'error', message: 'Request Failed' }); }
+    } catch (e) { setToast({ type: 'error', message: 'Failed' }); }
   };
 
   const handleReply = async (book, reqUid, text) => {
     try {
-      const bookRef = doc(db, 'artifacts', appId, 'public', 'data', 'books', book.id);
-      const updatedList = book.waitlist.map(r => r.uid === reqUid ? { ...r, ownerReply: text, status: 'replied' } : r);
-      await updateDoc(bookRef, { waitlist: updatedList });
-      setToast({ type: 'success', message: 'Reply Sent!' });
-    } catch (e) { setToast({ type: 'error', message: 'Failed to Send' }); }
+      const status = text.toLowerCase().includes('yes') || text.toLowerCase().includes('approve') ? 'approved' : 'replied';
+      const updatedList = book.waitlist.map(r => r.uid === reqUid ? { ...r, ownerReply: text, status: status } : r);
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', book.id), { waitlist: updatedList });
+      setToast({ type: 'success', message: 'Sent!' });
+    } catch (e) { setToast({ type: 'error', message: 'Failed' }); }
+  };
+
+  const handleHandover = async (book, requesterUid) => {
+     try {
+        const updatedList = book.waitlist.map(r => r.uid === requesterUid ? { ...r, status: 'handed_over' } : r);
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'books', book.id), { waitlist: updatedList });
+        setToast({ type: 'success', message: 'Marked as Handed Over' });
+     } catch (e) { setToast({ type: 'error', message: 'Update Failed' }); }
+  };
+
+  const handleReceive = async (book, request) => {
+      try {
+        const bookRef = doc(db, 'artifacts', appId, 'public', 'data', 'books', book.id);
+        await updateDoc(bookRef, {
+          ownerId: request.uid, currentOwner: request.name, contact: request.mobile, waitlist: [],
+          history: arrayUnion({ owner: request.name, date: new Date().toLocaleDateString(), action: `Received from ${book.currentOwner}` })
+        });
+        setSelectedBook(null); setToast({ type: 'success', message: 'Book Received!' });
+      } catch (e) { setToast({ type: 'error', message: 'Transfer Failed' }); }
   };
 
   const filteredBooks = useMemo(() => {
@@ -187,7 +198,6 @@ export default function App() {
   // --- RENDER ---
   if (!isDataLoaded) return <LoadingScreen />;
 
-  // 🔒 STRICT LOGIN (No Guest Access)
   if (!profile && !isAdminAuth) {
     return (
       <div className="fixed inset-0 bg-slate-50 overflow-hidden">
@@ -197,15 +207,15 @@ export default function App() {
             if(s.exists() && s.data().mpin === p){
               const pData = await getDoc(doc(db,'artifacts',appId,'users',s.data().uid,'profile','data'));
               setProfile(pData.data());
-            } else { setToast({type:'error', message:'Invalid Mobile or PIN'}); }
+            } else { setToast({type:'error', message:'Invalid Credentials'}); }
           }} 
           onRegister={async(d)=>{
-            const regRef = doc(db, 'artifacts', appId, 'public', 'data', 'mobile_registry', d.mobile);
-            const regSnap = await getDoc(regRef);
-            if (regSnap.exists()) { setToast({type:'error', message:'Number already exists!'}); return; }
-            await setDoc(doc(db,'artifacts',appId,'users',user.uid,'profile','data'), d);
-            await setDoc(regRef, {uid:user.uid, mpin:d.mpin});
-            setProfile(d); setToast({type:'success', message:'Account Created!'});
+             const regRef = doc(db, 'artifacts', appId, 'public', 'data', 'mobile_registry', d.mobile);
+             const regSnap = await getDoc(regRef);
+             if (regSnap.exists()) { setToast({type:'error', message:'Exists!'}); return; }
+             await setDoc(doc(db,'artifacts',appId,'users',user.uid,'profile','data'), d);
+             await setDoc(regRef, {uid:user.uid, mpin:d.mpin});
+             setProfile(d); setToast({type:'success', message:'Created!'});
           }} 
           onAdminLogin={(id,k)=>{if(id==='admin' && k==='admin9893@'){setIsAdminAuth(true); setProfile({name:'Admin'}); localStorage.setItem(`${appId}_isAdmin`,'true');}}} 
         />
@@ -219,72 +229,39 @@ export default function App() {
       
       {showProfile && <ProfileSettings profile={profile} isAdmin={isAdminAuth} onClose={()=>setShowProfile(false)} onUpdate={async(d)=>{await updateDoc(doc(db,'artifacts',appId,'users',user.uid,'profile','data'),d); setProfile(d); setToast({type:'success', message:'Updated!'});}} />}
       
-      {/* Pass updated CATEGORIES to AddBook */}
       {isAddingBook && <AddBook onPublish={handlePublishBook} onClose={()=>setIsAddingBook(false)} categories={CATEGORIES} classes={CLASSES} />}
       
       {showCommunity && <Community posts={communityPosts} onClose={()=>setShowCommunity(false)} onPost={async(t)=>{await addDoc(collection(db,'artifacts',appId,'public', 'data', 'community'),{name:profile.name, text:t, createdAt: serverTimestamp(), date: new Date().toLocaleDateString()});}} />}
       
       {selectedBook && (
         <BookDetails 
-          book={selectedBook} user={user} isAdmin={isAdminAuth} 
-          onClose={()=>setSelectedBook(null)} onBorrow={handleBorrow} onReply={handleReply} 
+          book={selectedBook} 
+          user={user} 
+          profile={profile}
+          isAdmin={isAdminAuth} 
+          onClose={()=>setSelectedBook(null)} 
+          onBorrow={handleBorrow} 
+          onReply={handleReply} 
+          onHandover={handleHandover} 
+          onReceive={handleReceive}
+          onUpdate={handleUpdateBook} // ✅ Pass Edit Function
           onDelete={async()=>{await deleteDoc(doc(db,'artifacts',appId,'public','data','books',selectedBook.id)); setSelectedBook(null); setToast({type:'success', message:'Deleted'});}} 
           onComplain={async(id,r)=>{await addDoc(collection(db,'artifacts',appId,'public','data','complaints'),{bookId:id, reporter:profile.name, reason:r, createdAt:serverTimestamp()}); setToast({type:'success', message:'Reported'});}} 
         />
       )}
 
       {!appMode ? (
-        /* 🏠 DASHBOARD (Landing) */
-        <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col">
-          
-          {/* Header with Admin Download Button */}
-          <div className="p-6 flex justify-between items-center">
-             <div className="bg-white p-4 rounded-[1.5rem] shadow-md border border-slate-100"><BookOpen className="text-indigo-600" size={32}/></div>
-             
-             <div className="flex gap-3">
-               {/* 📊 EXCEL EXPORT BUTTON (Admin Only) */}
-               {isAdminAuth && (
-                 <button onClick={exportReport} className="bg-green-100 text-green-700 p-3 rounded-full shadow-sm border border-green-200 active:scale-95 transition-all flex items-center justify-center" title="Download Report">
-                   <FileSpreadsheet size={24} /> 
-                 </button>
-               )}
-               
-               <button onClick={()=>setShowProfile(true)} className="flex items-center gap-3 bg-white pl-4 pr-2 py-2 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-all">
-                 <div className="text-right"><p className="text-xs font-black text-slate-800 leading-tight">{profile?.name.split(' ')[0]}</p><p className="text-[10px] font-bold text-slate-400">{profile?.studentClass || 'Student'}</p></div>
-                 <div className="w-10 h-10 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold shadow-md">{profile?.name[0]}</div>
-               </button>
-             </div>
-          </div>
-
-          <div className="px-6 mt-6 mb-10 text-center">
-            <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-2">Book<span className="text-indigo-600">Share</span></h1>
-            <p className="text-slate-500 font-bold text-sm mx-auto w-4/5">Share knowledge, help others, and build your library together.</p>
-          </div>
-          <div className="px-6 grid grid-cols-2 gap-4 mb-8">
-            <button onClick={()=>setAppMode('Sharing')} className="h-64 bg-white rounded-[3rem] flex flex-col items-center justify-center shadow-[0_20px_50px_rgba(79,70,229,0.1)] border border-slate-100 group active:scale-95 transition-all relative overflow-hidden">
-               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700"/>
-               <div className="bg-indigo-100 w-20 h-20 rounded-[2rem] flex items-center justify-center text-indigo-600 relative z-10 mb-4 shadow-inner"><Users size={36}/></div>
-               <div className="relative z-10 text-center"><h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Sharing</h2><p className="text-[10px] font-black text-indigo-400 mt-1 uppercase tracking-widest">Borrow & Read</p></div>
-            </button>
-            <button onClick={()=>setAppMode('Donation')} className="h-64 bg-white rounded-[3rem] flex flex-col items-center justify-center shadow-[0_20px_50px_rgba(244,63,94,0.1)] border border-slate-100 group active:scale-95 transition-all relative overflow-hidden">
-               <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700"/>
-               <div className="bg-rose-100 w-20 h-20 rounded-[2rem] flex items-center justify-center text-rose-600 relative z-10 mb-4 shadow-inner"><Heart size={36}/></div>
-               <div className="relative z-10 text-center"><h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Donation</h2><p className="text-[10px] font-black text-rose-400 mt-1 uppercase tracking-widest">Give & Help</p></div>
-            </button>
-          </div>
-          <div className="px-6 pb-20">
-            <button onClick={()=>setShowCommunity(true)} className="w-full bg-slate-900 rounded-[2.5rem] p-8 flex items-center justify-between shadow-2xl shadow-slate-400 active:scale-95 transition-all relative overflow-hidden group">
-               <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 opacity-90"/>
-               <div className="relative z-10 flex items-center gap-5">
-                 <div className="bg-white/10 p-4 rounded-2xl text-indigo-300 backdrop-blur border border-white/5 group-hover:rotate-12 transition-transform"><Sparkles size={28}/></div>
-                 <div className="text-left"><h3 className="text-white font-black text-xl tracking-tight">Community</h3><p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Join the discussion</p></div>
-               </div>
-               <div className="relative z-10 bg-white text-slate-900 p-3 rounded-full shadow-lg group-hover:translate-x-2 transition-transform"><ArrowRight size={20}/></div>
-            </button>
-          </div>
-        </div>
+        <LandingPage 
+          profile={profile} 
+          setAppMode={setAppMode} 
+          setShowProfile={setShowProfile} 
+          setShowCommunity={setShowCommunity} 
+          isAdminAuth={isAdminAuth} 
+          exportReport={exportReport}
+          myBooksWithRequests={myBooksWithRequests} // ✅ Pass Notifications
+          onOpenRequest={setSelectedBook}          
+        />
       ) : (
-        /* 📱 INNER APP (Sharing/Donation) */
         <div className="flex-1 flex flex-col h-full bg-slate-50">
           <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md p-4 border-b flex justify-between items-center shadow-sm">
             <button onClick={()=>setAppMode(null)} className="p-2 bg-slate-100 rounded-2xl active:scale-90"><ChevronLeft/></button>
@@ -299,17 +276,21 @@ export default function App() {
             </div>
 
             {searchTerm ? (
-                /* Grid for Search Results */
                 <div className="grid grid-cols-2 gap-4">
                   {filteredBooks.map(b => (
-                     <div key={b.id} onClick={()=>setSelectedBook(b)} className="bg-white rounded-[2rem] overflow-hidden border shadow-sm active:scale-95 transition-all">
+                     <div key={b.id} onClick={()=>setSelectedBook(b)} className="bg-white rounded-[2rem] overflow-hidden border shadow-sm active:scale-95 transition-all relative">
+                        {/* ✅ RED BADGE (Pending Requests) */}
+                        {b.waitlist && b.waitlist.filter(r=>r.status==='pending').length > 0 && (
+                          <div className="absolute top-2 right-2 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border border-white shadow-sm z-10 animate-pulse">
+                            +{b.waitlist.filter(r=>r.status==='pending').length}
+                          </div>
+                        )}
                         <div className="aspect-[2/3] bg-slate-100">{b.imageUrl && <img src={b.imageUrl} className="w-full h-full object-cover"/>}</div>
                         <div className="p-3"><h3 className="font-black text-[10px] uppercase truncate">{b.title}</h3></div>
                      </div>
                   ))}
                 </div>
             ) : (
-                /* 📺 NETFLIX STYLE ROWS WITH BADGES */
                 <div className="space-y-8">
                   {CATEGORIES.map(cat => {
                     const catBooks = filteredBooks.filter(b => b.category === cat);
@@ -322,7 +303,13 @@ export default function App() {
                         </div>
                         <div className="flex overflow-x-auto gap-4 px-2 pb-4 snap-x hide-scrollbar">
                           {catBooks.map(b => (
-                            <div key={b.id} onClick={()=>setSelectedBook(b)} className="min-w-[130px] w-[130px] snap-start flex-shrink-0 active:scale-95 transition-all">
+                            <div key={b.id} onClick={()=>setSelectedBook(b)} className="min-w-[130px] w-[130px] snap-start flex-shrink-0 active:scale-95 transition-all relative">
+                              {/* ✅ RED BADGE (Pending Requests) */}
+                              {b.waitlist && b.waitlist.filter(r=>r.status==='pending').length > 0 && (
+                                <div className="absolute top-2 right-2 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border border-white shadow-sm z-10 animate-pulse">
+                                  +{b.waitlist.filter(r=>r.status==='pending').length}
+                                </div>
+                              )}
                               <div className="aspect-[2/3] bg-white rounded-2xl overflow-hidden shadow-md border border-slate-100 mb-2 relative">
                                 {b.imageUrl ? <img src={b.imageUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-300"><BookOpen/></div>}
                               </div>
@@ -339,29 +326,18 @@ export default function App() {
             )}
           </div>
 
-          {/* Navigation Bar */}
-          <nav className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-xl border-t p-4 pb-6 flex justify-around items-center z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
-            <button onClick={() => setAppMode(null)} className={`flex flex-col items-center gap-1 active:scale-90 transition-all ${!appMode ? 'text-indigo-600' : 'text-slate-300'}`}>
-                <div className={`p-2 rounded-2xl ${!appMode ? 'bg-indigo-50' : ''}`}><LayoutGrid size={24}/></div>
-                <span className="text-[9px] font-black uppercase">Home</span>
-            </button>
-            <button onClick={()=>{if(!appMode)setAppMode('Sharing');setIsAddingBook(true)}} className="bg-indigo-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-200 -mt-10 border-[6px] border-slate-50 active:scale-90 transition-all"><Plus size={30}/></button>
-            <button onClick={() => setShowLogoutConfirm(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-rose-500 active:scale-90 transition-all group">
-                <div className="p-2 rounded-2xl group-hover:bg-rose-50 group-active:bg-rose-100 transition-colors"><LogOut size={22}/></div>
-                <span className="text-[10px] font-bold uppercase tracking-[2px] antialiased">Logout</span>
-            </button>
-          </nav>
+          <Navbar appMode={appMode} setAppMode={setAppMode} onAddClick={()=>{if(!appMode)setAppMode('Sharing');setIsAddingBook(true)}} onLogoutClick={()=>setShowLogoutConfirm(true)} />
         </div>
       )}
 
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-6 animate-in fade-in">
           <div className="bg-white w-full max-w-xs p-8 rounded-[2.5rem] shadow-2xl text-center scale-100 animate-in zoom-in-95">
-            <h2 className="text-2xl font-black text-slate-900 mb-2 uppercase">Log Out?</h2>
-            <div className="flex flex-col gap-3">
-              <button onClick={async()=>{await signOut(auth);localStorage.clear();window.location.reload();}} className="w-full bg-rose-500 text-white py-4 rounded-2xl font-black uppercase shadow-lg shadow-rose-200 active:scale-95 transition-all">Yes, Sign Out</button>
-              <button onClick={()=>setShowLogoutConfirm(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase active:scale-95 transition-all">Cancel</button>
-            </div>
+             <h2 className="text-2xl font-black text-slate-900 mb-2 uppercase">Log Out?</h2>
+             <div className="flex flex-col gap-3">
+               <button onClick={async()=>{await signOut(auth);localStorage.clear();window.location.reload();}} className="w-full bg-rose-500 text-white py-4 rounded-2xl font-black uppercase">Yes, Sign Out</button>
+               <button onClick={()=>setShowLogoutConfirm(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase">Cancel</button>
+             </div>
           </div>
         </div>
       )}
