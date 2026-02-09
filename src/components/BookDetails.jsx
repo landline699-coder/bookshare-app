@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-// ✅ Fixed Import Line (No '...' here)
-import { X, User, Phone, ShieldCheck, Trash2, CheckCircle, Clock, AlertCircle, Flag } from 'lucide-react';
+import { X, User, Phone, ShieldCheck, Trash2, CheckCircle, Clock, AlertCircle, Flag, ScrollText } from 'lucide-react';
 
 export default function BookDetails({ 
   book, user, profile, isAdmin, 
@@ -8,10 +7,10 @@ export default function BookDetails({
 }) {
   const [msg, setMsg] = useState('');
 
-  // 🔥 POWER LOGIC: आप मालिक हैं अगर (1) ये आपकी किताब है, या (2) आप ADMIN हैं
+  // 🔥 POWER LOGIC: You are owner if (1) Your ID matches, or (2) You are ADMIN
   const isOwner = user.uid === book.ownerId || isAdmin;
   
-  // चेक करें कि क्या मैंने (User) पहले से रिक्वेस्ट भेजी है?
+  // Check if I (Student) already requested this book
   const myRequest = book.waitlist?.find(r => r.uid === user.uid);
 
   return (
@@ -76,7 +75,7 @@ export default function BookDetails({
 
           {/* 🟢 SECTION A: OWNER / ADMIN VIEW */}
           {isOwner && (
-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 animate-in slide-in-from-bottom-4">
+            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 animate-in slide-in-from-bottom-4 mb-6">
               
               <h3 className="font-black text-slate-700 mb-4 flex items-center gap-2 text-sm uppercase tracking-widest">
                 <User size={16} className="text-indigo-600"/> 
@@ -99,7 +98,6 @@ export default function BookDetails({
                         {req.message && <p className="text-[11px] text-slate-500 mt-1 italic">"{req.message}"</p>}
                       </div>
                       
-                      {/* Status Badge */}
                       <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wide ${
                         req.status === 'approved' ? 'bg-green-100 text-green-700' : 
                         req.status === 'handed_over' ? 'bg-indigo-100 text-indigo-700' :
@@ -123,7 +121,6 @@ export default function BookDetails({
                         </>
                       )}
                       
-                      {/* Handover Button (Step 1 of Transfer) */}
                       {req.status === 'approved' && (
                         <button 
                           onClick={() => onHandover(book, req.uid)} 
@@ -133,7 +130,6 @@ export default function BookDetails({
                         </button>
                       )}
 
-                      {/* Waiting State */}
                       {req.status === 'handed_over' && (
                         <div className="w-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold py-2 rounded-lg text-center animate-pulse flex items-center justify-center gap-2">
                           <Clock size={14}/> Waiting for receiver...
@@ -144,7 +140,7 @@ export default function BookDetails({
                 ))}
               </div>
 
-              {/* DELETE BUTTON (Critical Action) */}
+              {/* DELETE BUTTON */}
               <button 
                 onClick={onDelete} 
                 className="w-full mt-6 bg-white border-2 border-rose-100 text-rose-500 hover:bg-rose-50 hover:border-rose-200 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2"
@@ -156,7 +152,7 @@ export default function BookDetails({
 
           {/* 🟢 SECTION B: BORROWER VIEW (Students) */}
           {!isOwner && (
-            <div className="space-y-4 animate-in slide-in-from-bottom-4">
+            <div className="space-y-4 animate-in slide-in-from-bottom-4 mb-6">
               
               {myRequest ? (
                 // --- Request Status View ---
@@ -184,7 +180,7 @@ export default function BookDetails({
                     <p className="text-xs text-rose-500 font-bold">Owner rejected this request. Try another book.</p>
                   )}
 
-                  {/* ✅ Approved: Show Contact (Privacy Aware) */}
+                  {/* Contact Info (Privacy Aware) */}
                   {myRequest.status === 'approved' && (
                     <div className="mt-3 bg-white p-3 rounded-xl border border-green-100 shadow-sm">
                        <p className="text-[10px] text-green-700 font-bold mb-2 uppercase tracking-wide">Owner Agreed! Contact Details:</p>
@@ -193,7 +189,6 @@ export default function BookDetails({
                            <Phone size={14}/>
                          </div>
                          <div>
-                           {/* 🔒 PRIVACY LOGIC: Hide number if private & not admin */}
                            {book.ownerPrivacy && !isAdmin ? (
                              <>
                                <p className="text-sm font-black text-slate-800">Contact School Admin</p>
@@ -210,7 +205,7 @@ export default function BookDetails({
                     </div>
                   )}
 
-                  {/* ✅ Handover: Confirm Receive Button */}
+                  {/* Receive Button */}
                   {myRequest.status === 'handed_over' && (
                     <div className="mt-4">
                        <p className="text-xs text-indigo-700 font-bold mb-3 text-center">Owner says they gave you the book.</p>
@@ -249,6 +244,40 @@ export default function BookDetails({
               )}
             </div>
           )}
+
+          {/* 📜 NEW: HISTORY SECTION (Timeline) */}
+          <div className="mt-8 pt-6 border-t border-slate-100">
+            <h3 className="font-black text-slate-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
+              <ScrollText size={16} /> Book Journey
+            </h3>
+            
+            <div className="space-y-6 pl-4 border-l-2 border-slate-200 ml-2 relative">
+              {(!book.history || book.history.length === 0) ? (
+                <div className="relative pl-6">
+                  <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white bg-indigo-500 shadow-sm" />
+                  <p className="text-xs font-bold text-slate-700">Uploaded by Owner</p>
+                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">Start of journey</p>
+                </div>
+              ) : (
+                book.history.map((item, index) => (
+                  <div key={index} className="relative pl-6">
+                    {/* Timeline Dot */}
+                    <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm ${
+                      index === book.history.length - 1 ? 'bg-indigo-600 animate-pulse' : 'bg-slate-300'
+                    }`} />
+                    
+                    <p className="text-xs font-bold text-slate-800 leading-tight">
+                      {item.action} 
+                      {item.owner && <span className="text-indigo-600 block mt-0.5">by {item.owner}</span>}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold mt-1 bg-slate-50 inline-block px-2 py-0.5 rounded-md">
+                      {item.date}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
 
         </div>
       </div>
