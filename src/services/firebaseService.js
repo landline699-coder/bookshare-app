@@ -138,3 +138,7 @@ export const subscribeToAllUsers = (callback) => {
     callback(list);
   });
 };
+export const deleteCommunityPost = (postId) => {
+  const postRef = doc(db, 'artifacts', 'school-bookshare-production-v1', 'public', 'data', 'community', postId);
+  return deleteDoc(postRef);
+};

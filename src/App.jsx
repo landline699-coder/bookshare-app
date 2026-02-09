@@ -176,7 +176,12 @@ export default function App() {
     await fb.deleteBook(bId); await fb.deleteReport(rId);
     setToast({ type: 'success', message: 'Book Deleted & Resolved.' });
   };
-
+const handleDeletePost = async (postId) => {
+  if (window.confirm("Delete this message?")) {
+    await fb.deleteCommunityPost(postId);
+    setToast({ type: 'success', message: 'Deleted!' });
+  }
+};
   if (!isDataLoaded) return <LoadingScreen />;
   if (!user) return <Auth />;
   if (user && !profile) return <GlobalLoader message="Syncing..." />;
@@ -218,7 +223,8 @@ export default function App() {
 
       {isAddingBook && <AddBook mode={appMode} user={user} profile={profile} classes={CLASSES} categories={CATEGORIES} onClose={() => setIsAddingBook(false)} onPublish={handlePublishBook} />}
       {selectedBook && <BookDetails book={selectedBook} user={user} profile={profile} classes={CLASSES} isAdmin={isAdmin} onClose={() => setSelectedBook(null)} onBorrow={handleBorrowRequest} onReply={handleReply} onHandover={handleHandover} onReceive={handleReceive} onDelete={handleDeleteBook} onReport={handleReportBook} />}
-      {showCommunity && <Community posts={communityPosts} profile={profile} onClose={() => setShowCommunity(false)} onPost={async (t) => await fb.postToCommunity(profile, t)} />}
+      {showCommunity && <Community posts={communityPosts} profile={profile} onClose={() => setShowCommunity(false)} onPost={async (t) => await fb.postToCommunity(profile, t)} isAdmin={isAdmin} 
+         onDeletePost={handleDeletePost}/>}
       
       {showProfile && (
         <ProfileSettings 

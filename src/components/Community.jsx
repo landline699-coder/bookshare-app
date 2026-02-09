@@ -1,43 +1,111 @@
-// src/components/Community.js
-import React, { useState } from 'react';
-import { ChevronLeft, Send } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Send, User, Trash2 } from 'lucide-react'; // 👈 Trash2 import kiya
 
-export default function Community({ posts, onPost, onClose, userName }) {
+export default function Community({ posts, profile, onClose, onPost, isAdmin, onDeletePost }) {
   const [text, setText] = useState('');
+  const scrollRef = useRef(null);
+
+  // Auto-scroll to bottom when new post arrives
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [posts]);
+
+  const handleSend = () => {
+    if (!text.trim()) return;
+    onPost(text);
+    setText('');
+  };
 
   return (
-    <div className="fixed inset-0 bg-white z-[200] animate-in slide-in-from-bottom flex flex-col">
-      <header className="p-4 border-b flex justify-between items-center bg-white sticky top-0">
-        <button onClick={onClose} className="p-2 bg-slate-50 rounded-xl"><ChevronLeft/></button>
-        <h1 className="font-black uppercase text-sm tracking-widest">Community Board</h1>
-        <div className="w-10"/>
-      </header>
-
-      <div className="flex-1 p-4 overflow-y-auto space-y-4 no-scrollbar">
-        {posts.map((p, i) => (
-          <div key={i} className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 shadow-sm animate-in fade-in">
-            <div className="flex justify-between items-center mb-2">
-              <div className="text-[10px] font-black text-indigo-600 uppercase">@{p.name}</div>
-              <div className="text-[8px] font-bold text-slate-300 uppercase">{p.date}</div>
-            </div>
-            <p className="text-sm font-bold text-slate-700 leading-relaxed italic">"{p.text}"</p>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-lg h-[80vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden relative">
+        
+        {/* Header */}
+        <div className="bg-indigo-600 p-4 flex justify-between items-center z-10">
+          <div className="text-white">
+            <h2 className="text-xl font-black tracking-tight">Community Chat</h2>
+            <p className="text-[10px] opacity-80 font-bold uppercase">Student Discussions</p>
           </div>
-        ))}
-      </div>
+          <button onClick={onClose} className="bg-white/20 p-2 rounded-full text-white hover:bg-white/30 transition-colors">
+            <X size={20} />
+          </button>
+        </div>
 
-      <div className="p-4 bg-white border-t flex gap-2 shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
-        <input 
-          className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none text-xs font-bold" 
-          placeholder="I need a 10th Class Maths book..." 
-          value={text} 
-          onChange={e => setText(e.target.value)} 
-        />
-        <button 
-          onClick={() => { if(text.trim()) { onPost(text); setText(''); } }} 
-          className="bg-indigo-600 text-white p-4 rounded-2xl shadow-lg active:scale-90 transition-all"
-        >
-          <Send size={20}/>
-        </button>
+        {/* Chat Area */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+          {posts.length === 0 ? (
+            <div className="text-center py-20 opacity-50">
+              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-2xl">💬</span>
+              </div>
+              <p className="font-bold text-slate-400">No messages yet.</p>
+              <p className="text-xs text-slate-400">Be the first to say hello!</p>
+            </div>
+          ) : (
+            posts.map((post) => (
+              <div key={post.id} className="relative group bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                
+                {/* 🛡️ ADMIN DELETE BUTTON (Sirf Admin ko dikhega) */}
+                {isAdmin && (
+                  <button 
+                    onClick={() => onDeletePost(post.id)}
+                    className="absolute top-2 right-2 p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                    title="Delete Message"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+
+                {/* Author Info */}
+                <div className="flex items-center gap-2 mb-2">
+                   <div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                      <User size={12} />
+                   </div>
+                   <span className="font-black text-slate-800 text-xs">{post.author}</span>
+                   <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full uppercase">
+                     {post.class || 'Student'}
+                   </span>
+                </div>
+
+                {/* Message Text */}
+                <p className="text-slate-600 text-sm leading-relaxed font-medium pl-8">
+                  {post.text}
+                </p>
+                
+                {/* Time (Optional) */}
+                {post.timestamp && (
+                  <p className="text-[9px] text-slate-300 font-bold text-right mt-2">
+                    {new Date(post.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="p-4 bg-white border-t border-slate-100">
+          <div className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl border border-slate-200 focus-within:border-indigo-300 focus-within:ring-4 ring-indigo-500/10 transition-all">
+            <input 
+              type="text" 
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Type your message..." 
+              className="flex-1 bg-transparent px-3 py-2 outline-none text-sm font-bold text-slate-700 placeholder:text-slate-400"
+            />
+            <button 
+              onClick={handleSend}
+              disabled={!text.trim()}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-3 rounded-xl shadow-lg shadow-indigo-200 active:scale-90 transition-all"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );
