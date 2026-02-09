@@ -1,106 +1,100 @@
-// src/components/Auth.jsx
-import React, { useState, useEffect } from 'react';
-import { BookOpen, ShieldCheck, User, Lock, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { User, Smartphone, Lock, ArrowRight, Loader2, LogIn, ChevronLeft } from 'lucide-react';
+import * as fb from '../services/firebaseService';
 
-const QUOTES = [
-  { text: "Share a book, share a world.", author: "Community" },
-  { text: "Old books can change new lives.", author: "BookShare" },
-  { text: "Knowledge grows by sharing.", author: "Proverb" }
-];
+export default function Auth() {
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [isResetMode, setIsResetMode] = useState(false); // 👈 नया स्टेट
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
-export default function Auth({ onRegister, onLogin, onAdminLogin }) {
-  const [isLogin, setIsLogin] = useState(true);
-  const [isAdminMode, setIsAdminMode] = useState(false);
-  const [form, setForm] = useState({ name: '', mobile: '', mpin: '', studentClass: '10th' });
-  const [quoteIndex, setQuoteIndex] = useState(0);
+  // Fields
+  const [mobile, setMobile] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [studentClass, setStudentClass] = useState('10th');
 
-  useEffect(() => {
-    const timer = setInterval(() => setQuoteIndex((p) => (p + 1) % QUOTES.length), 3000);
-    return () => clearInterval(timer);
-  }, []);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setMessage('');
 
-  // 🛡️ Logic to allow ONLY Numbers
-  const handleNumInput = (e, field) => {
-    const val = e.target.value.replace(/\D/g, ''); // Remove non-digits
-    setForm({ ...form, [field]: val });
-  };
-
-  const handleSubmit = () => {
-    if (isAdminMode) {
-      if (form.mpin === 'admin9893@') onAdminLogin('admin', form.mpin);
-      else alert("Wrong Admin Password!");
-      return;
+    try {
+      if (isResetMode) {
+        // --- FORGOT PASSWORD LOGIC ---
+        // नोट: नकली ईमेल होने के कारण ईमेल नहीं जाएगा, पर हम बच्चों को एडमिन का नंबर दिखा सकते हैं
+        setMessage("Password reset request sent to Admin. Please contact your teacher.");
+      } else if (isLoginMode) {
+        await fb.loginUser(mobile, password);
+      } else {
+        await fb.registerUser(mobile, password, { name, mobile, studentClass, role: 'student' });
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-    if (isLogin) onLogin(form.mobile, form.mpin);
-    else onRegister(form);
   };
 
   return (
-    <div className={`fixed inset-0 z-[60] flex flex-col items-center justify-center p-6 text-white transition-colors duration-500 ${isAdminMode ? 'bg-slate-900' : 'bg-indigo-600'}`}>
-      
-      <button onClick={() => setIsAdminMode(!isAdminMode)} className="absolute top-6 right-6 bg-white/20 p-2 rounded-full backdrop-blur-md active:scale-90 transition-all border border-white/10">
-        {isAdminMode ? <User size={24}/> : <ShieldCheck size={24}/>}
-      </button>
-
-      <div className="flex-1 flex flex-col items-center justify-center space-y-8">
-        <div className="bg-white/20 p-6 rounded-[2.5rem] backdrop-blur shadow-2xl">
-          {isAdminMode ? <ShieldCheck size={48} /> : <BookOpen size={48} />}
-        </div>
-        {!isAdminMode && (
-          <div className="h-16 text-center animate-in fade-in">
-             <p className="text-xl font-black uppercase tracking-tight">"{QUOTES[quoteIndex].text}"</p>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white w-full max-w-sm p-8 rounded-[3rem] shadow-2xl text-slate-800 animate-in slide-in-from-bottom">
-        <h2 className="text-2xl font-black uppercase tracking-tighter text-indigo-900 mb-6 flex items-center gap-2">
-          {isAdminMode ? <><Lock className="text-rose-500"/> Admin Access</> : (isLogin ? "Student Login" : "New Account")}
-        </h2>
+    <div className="fixed inset-0 bg-slate-900 flex items-center justify-center p-4 z-50">
+      <div className="w-full max-w-md bg-white rounded-[2rem] p-8 shadow-2xl animate-in zoom-in-95">
         
-        <div className="space-y-4">
-          {!isAdminMode && !isLogin && (
+        {/* Header */}
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/30">
+            {isResetMode ? <Lock className="text-white" size={32} /> : isLoginMode ? <LogIn className="text-white" size={32} /> : <User className="text-white" size={32} />}
+          </div>
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+            {isResetMode ? 'Reset Password' : isLoginMode ? 'Welcome Back!' : 'Join BookShare'}
+          </h1>
+        </div>
+
+        {error && <div className="mb-6 p-3 bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold rounded-xl text-center">⚠️ {error}</div>}
+        {message && <div className="mb-6 p-3 bg-green-50 border border-green-100 text-green-600 text-xs font-bold rounded-xl text-center">✅ {message}</div>}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isResetMode ? (
+            // --- Reset Mode Field ---
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3">
+              <Smartphone size={20} className="text-slate-400" />
+              <input required type="number" value={mobile} onChange={e=>setMobile(e.target.value)} placeholder="Enter Registered Mobile" className="bg-transparent w-full outline-none text-slate-700 font-bold" />
+            </div>
+          ) : (
+            // --- Login/Register Fields ---
             <>
-              <input placeholder="Full Name" className="w-full p-4 bg-indigo-50 rounded-2xl font-bold outline-none" onChange={e => setForm({...form, name: e.target.value})} />
-              <select className="w-full p-4 bg-indigo-50 rounded-2xl font-bold outline-none" onChange={e => setForm({...form, studentClass: e.target.value})}>
-                {["6th","7th","8th","9th","10th","11th","12th","College","Other"].map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              {!isLoginMode && (
+                <div className="space-y-4 animate-in slide-in-from-top-4">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3"><User size={20} className="text-slate-400" /><input required value={name} onChange={e=>setName(e.target.value)} placeholder="Full Name" className="bg-transparent w-full outline-none text-slate-700 font-bold" /></div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><select value={studentClass} onChange={e=>setStudentClass(e.target.value)} className="bg-transparent w-full outline-none text-slate-700 font-bold">{["6th","7th","8th","9th","10th","11th","12th","College","Other"].map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                </div>
+              )}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3"><Smartphone size={20} className="text-slate-400" /><input required type="number" value={mobile} onChange={e=>setMobile(e.target.value)} placeholder="Mobile Number" className="bg-transparent w-full outline-none text-slate-700 font-bold" /></div>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3"><Lock size={20} className="text-slate-400" /><input required type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" className="bg-transparent w-full outline-none text-slate-700 font-bold" /></div>
             </>
           )}
-          
-          {/* ✅ Mobile: Only Numbers allowed */}
-          {!isAdminMode && (
-            <input 
-              placeholder="Mobile Number" 
-              type="tel" 
-              maxLength={10} 
-              value={form.mobile}
-              className="w-full p-4 bg-indigo-50 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
-              onChange={(e) => handleNumInput(e, 'mobile')} 
-            />
-          )}
 
-          {/* ✅ PIN: Only Numbers allowed (unless Admin) */}
-          <input 
-            placeholder={isAdminMode ? "Enter Admin Password" : "Set 4-Digit PIN"} 
-            type={isAdminMode ? "text" : "tel"}
-            maxLength={isAdminMode ? 20 : 4} 
-            value={form.mpin}
-            className={`w-full p-4 rounded-2xl font-bold border-none outline-none ring-2 focus:ring-4 transition-all ${isAdminMode ? 'bg-slate-100 ring-slate-200' : 'bg-indigo-50 ring-indigo-50 focus:ring-indigo-100'}`}
-            onChange={(e) => isAdminMode ? setForm({...form, mpin: e.target.value}) : handleNumInput(e, 'mpin')} 
-          />
-          
-          <button onClick={handleSubmit} className={`w-full text-white p-5 rounded-2xl font-black shadow-xl active:scale-95 transition-all flex justify-between items-center ${isAdminMode ? 'bg-slate-800 shadow-slate-300' : 'bg-indigo-600 shadow-indigo-200'}`}>
-            <span>{isAdminMode ? "ACCESS PANEL" : (isLogin ? "UNLOCK LIBRARY" : "CREATE PROFILE")}</span>
-            <ArrowRight/>
+          <button disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 mt-4">
+            {loading ? <Loader2 className="animate-spin" /> : isResetMode ? 'Send Request' : isLoginMode ? 'Login' : 'Create Account'} 
+            {!loading && <ArrowRight size={18} />}
           </button>
+        </form>
+
+        {/* Footer Links */}
+        <div className="mt-8 text-center pt-6 border-t border-slate-100 flex flex-col gap-4">
+          {isResetMode ? (
+            <button onClick={() => setIsResetMode(false)} className="text-slate-500 font-bold text-xs flex items-center justify-center gap-1"><ChevronLeft size={14}/> Back to Login</button>
+          ) : (
+            <>
+              <button onClick={() => setIsResetMode(true)} className="text-indigo-600 font-bold text-xs">Forgot Password?</button>
+              <button onClick={() => { setIsLoginMode(!isLoginMode); setError(''); }} className="text-slate-500 font-bold text-xs">
+                {isLoginMode ? "New student? Register here" : "Already have an account? Login"}
+              </button>
+            </>
+          )}
         </div>
-        
-        {!isAdminMode && (
-          <p onClick={() => setIsLogin(!isLogin)} className="text-center text-xs font-bold text-slate-400 mt-6 uppercase mt-4">
-            {isLogin ? "New here? Register" : "Have account? Login"}
-          </p>
-        )}
       </div>
     </div>
   );

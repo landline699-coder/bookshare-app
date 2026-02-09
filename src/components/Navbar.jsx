@@ -1,41 +1,45 @@
-// src/components/Navbar.jsx
 import React from 'react';
-import { LayoutGrid, Plus, LogOut } from 'lucide-react';
+import { Bell, User, LogOut, Shield } from 'lucide-react';
 
-export default function Navbar({ appMode, setAppMode, onAddClick, onLogoutClick }) {
+export default function Navbar({ profile, onOpenProfile, onOpenAdmin, notifications, totalRequests, onOpenCommunity, onLogout }) {
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-xl border-t p-4 pb-6 flex justify-around items-center z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
+    <nav className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex justify-between items-center z-40">
       
-      {/* Home Button */}
-      <button 
-        onClick={() => setAppMode(null)} 
-        className={`flex flex-col items-center gap-1 active:scale-90 transition-all ${!appMode ? 'text-indigo-600' : 'text-slate-300'}`}
-      >
-        <div className={`p-2 rounded-2xl ${!appMode ? 'bg-indigo-50' : ''}`}>
-          <LayoutGrid size={24}/>
+      {/* Logo */}
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black">B</div>
+        <span className="font-black text-slate-800 tracking-tight hidden sm:block">BookShare</span>
+      </div>
+
+      {/* Right Actions */}
+      <div className="flex items-center gap-3">
+        
+        {/* 🔥 NEW: Admin Login Button */}
+        <button 
+          onClick={onOpenAdmin}
+          className="p-2 bg-slate-100 hover:bg-slate-900 hover:text-white rounded-full transition-colors text-slate-500"
+          title="Admin Login"
+        >
+          <Shield size={20} />
+        </button>
+
+        {/* Notifications */}
+        <button className="relative p-2 hover:bg-slate-100 rounded-full transition-colors">
+          <Bell size={20} className="text-slate-600" />
+          {totalRequests > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse" />}
+        </button>
+
+        {/* Profile */}
+        <div onClick={onOpenProfile} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 pr-3 rounded-full border border-transparent hover:border-slate-100 transition-all">
+          <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold text-sm">
+            {profile?.name?.[0] || <User size={16}/>}
+          </div>
+          <div className="hidden sm:block text-left">
+             <p className="text-xs font-black text-slate-700 leading-none">{profile?.name || 'User'}</p>
+             <p className="text-[9px] font-bold text-slate-400 uppercase">{profile?.studentClass || 'Student'}</p>
+          </div>
         </div>
-        <span className="text-[9px] font-black uppercase">Home</span>
-      </button>
-
-      {/* Add Book Button */}
-      <button 
-        onClick={onAddClick} 
-        className="bg-indigo-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-200 -mt-10 border-[6px] border-slate-50 active:scale-90 transition-all"
-      >
-        <Plus size={30}/>
-      </button>
-
-      {/* Logout Button */}
-      <button 
-        onClick={onLogoutClick} 
-        className="flex flex-col items-center gap-1 text-slate-400 hover:text-rose-500 active:scale-90 transition-all group"
-      >
-        <div className="p-2 rounded-2xl group-hover:bg-rose-50 group-active:bg-rose-100 transition-colors">
-          <LogOut size={22}/>
-        </div>
-        <span className="text-[10px] font-bold uppercase tracking-[2px] antialiased">Logout</span>
-      </button>
-
+      </div>
     </nav>
   );
 }

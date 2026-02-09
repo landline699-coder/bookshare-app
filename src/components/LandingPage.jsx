@@ -1,134 +1,128 @@
-import React, { useState } from 'react';
-import { BookOpen, Users, Heart, Sparkles, ArrowRight, FileSpreadsheet, UserCircle, Bell, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BookOpen, Heart, MessageSquare, ArrowRight, Quote } from 'lucide-react';
 
-export default function LandingPage({ 
-  profile, 
-  setAppMode, 
-  setShowProfile, 
-  setShowCommunity, 
-  isAdminAuth, 
-  exportReport,
-  myBooksWithRequests, // ✅ New Prop
-  onOpenRequest        // ✅ New Prop
-}) {
-  const [showNotifs, setShowNotifs] = useState(false);
+export default function LandingPage({ profile, onSetMode, setShowCommunity, setShowProfile }) {
+  const [currentQuote, setCurrentQuote] = useState(0);
 
-  // Calculate total pending requests
-  const totalRequests = myBooksWithRequests?.reduce((acc, book) => acc + (book.waitlist?.filter(r => r.status === 'pending').length || 0), 0) || 0;
+  // ✍️ INSPIRATIONAL QUOTES LIST
+  const quotes = [
+    { text: "आज का पाठक, कल का नेता होता है।", author: "Margaret Fuller" },
+    { text: "किताबें वे विमान हैं जिनसे आप कहीं भी जा सकते हैं।", author: "Gwen Glazer" },
+    { text: "शिक्षा सबसे शक्तिशाली हथियार है जिसे आप दुनिया बदलने के लिए उपयोग कर सकते हैं।", author: "Nelson Mandela" },
+    { text: "एक अच्छी किताब, सौ अच्छे दोस्तों के बराबर होती है।", author: "APJ Abdul Kalam" },
+    { text: "ज्ञान बांटने से बढ़ता है, इसे अपनी तक सीमित न रखें।", author: "Indian Wisdom" }
+  ];
+
+  // 🔄 AUTO-SLIDE LOGIC (Every 4 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentQuote((prev) => (prev + 1) % quotes.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col relative">
+    <div className="space-y-8 animate-in fade-in duration-700 pt-6">
       
-      {/* Header */}
-      <div className="p-6 flex justify-between items-center">
-         <div className="bg-white p-4 rounded-[1.5rem] shadow-md border border-slate-100">
-           <BookOpen className="text-indigo-600" size={32}/>
-         </div>
-         
-         <div className="flex gap-3 items-center">
-           {/* ✅ 1. NOTIFICATION BELL */}
-           {profile && (
-             <div className="relative">
-               <button 
-                 onClick={() => setShowNotifs(!showNotifs)}
-                 className={`p-3 rounded-full shadow-sm border transition-all active:scale-95 ${showNotifs ? 'bg-indigo-100 border-indigo-200 text-indigo-600' : 'bg-white border-slate-100 text-slate-600'}`}
-               >
-                 <Bell size={24} />
-               </button>
-               {totalRequests > 0 && (
-                 <div className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-slate-50 animate-bounce">
-                   {totalRequests}
-                 </div>
-               )}
-
-               {/* NOTIFICATION DROPDOWN */}
-               {showNotifs && (
-                 <div className="absolute right-0 top-14 w-72 bg-white rounded-3xl shadow-2xl border border-slate-100 p-4 z-50 animate-in slide-in-from-top-2">
-                   <div className="flex justify-between items-center mb-3">
-                     <h3 className="font-black text-sm text-slate-800 uppercase tracking-widest">Inbox</h3>
-                     <button onClick={()=>setShowNotifs(false)}><X size={16} className="text-slate-400"/></button>
-                   </div>
-                   
-                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                     {totalRequests === 0 ? (
-                       <p className="text-center text-xs text-slate-400 py-4 font-bold">No new requests</p>
-                     ) : (
-                       myBooksWithRequests.map(book => (
-                         book.waitlist.filter(r => r.status === 'pending').map((req, idx) => (
-                           <div key={`${book.id}-${idx}`} onClick={() => { onOpenRequest(book); setShowNotifs(false); }} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 active:scale-95 transition-all cursor-pointer hover:bg-indigo-50 hover:border-indigo-100">
-                             <div className="flex justify-between">
-                               <span className="text-[10px] font-black text-indigo-500 uppercase truncate w-20">{book.title}</span>
-                               <span className="text-[9px] font-bold text-slate-400">{req.date}</span>
-                             </div>
-                             <p className="text-xs font-bold text-slate-700 mt-1">
-                               <span className="text-slate-900">{req.name}</span> wants this book.
-                             </p>
-                           </div>
-                         ))
-                       ))
-                     )}
-                   </div>
-                 </div>
-               )}
-             </div>
-           )}
-
-           {/* Admin Export */}
-           {isAdminAuth && (
-             <button onClick={exportReport} className="bg-green-100 text-green-700 p-3 rounded-full shadow-sm border border-green-200 active:scale-95 transition-all">
-               <FileSpreadsheet size={24} /> 
-             </button>
-           )}
-           
-           {/* Profile */}
-           <button onClick={()=>setShowProfile(true)} className="flex items-center gap-3 bg-white pl-4 pr-2 py-2 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-all">
-             <div className="text-right">
-               <p className="text-xs font-black text-slate-800 leading-tight">{profile?.name.split(' ')[0]}</p>
-               <p className="text-[10px] font-bold text-slate-400">{profile?.studentClass || 'Guest'}</p>
-             </div>
-             <div className="w-10 h-10 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold shadow-md">
-               {profile?.name ? profile.name[0] : <UserCircle/>}
-             </div>
-           </button>
-         </div>
-      </div>
-
-      {/* Hero Section */}
-      <div className="px-6 mt-6 mb-10 text-center">
-        <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-2">
+      {/* 🟢 HERO HEADER (Clean & Minimal) */}
+      <div className="text-center">
+        <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-1">
           Book<span className="text-indigo-600">Share</span>
         </h1>
-        <p className="text-slate-500 font-bold text-sm mx-auto w-4/5">
-          Share knowledge, help others, and build your library together.
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em] mb-8">
+          Share Knowledge • Build Library
         </p>
       </div>
 
-      {/* Action Cards */}
-      <div className="px-6 grid grid-cols-2 gap-4 mb-8">
-        <button onClick={()=>setAppMode('Sharing')} className="h-64 bg-white rounded-[3rem] flex flex-col items-center justify-center shadow-[0_20px_50px_rgba(79,70,229,0.1)] border border-slate-100 group active:scale-95 transition-all relative overflow-hidden">
-           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700"/>
-           <div className="bg-indigo-100 w-20 h-20 rounded-[2rem] flex items-center justify-center text-indigo-600 relative z-10 mb-4 shadow-inner"><Users size={36}/></div>
-           <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight relative z-10">Sharing</h2>
-        </button>
+      {/* 🟢 NEW: SLIDING QUOTES SECTION (With Premium BG) */}
+      <div className="relative max-w-2xl mx-auto px-4">
+        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-violet-700 rounded-[2.5rem] p-8 shadow-2xl shadow-indigo-200">
+          
+          {/* Abstract BG Decorations */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl" />
+          <div className="absolute bottom-0 left-0 w-24 h-24 bg-indigo-400/20 rounded-full -ml-10 -mb-10 blur-xl" />
+          
+          <div className="relative z-10 flex flex-col items-center text-center">
+            <Quote className="text-white/30 mb-4" size={32} />
+            
+            <div key={currentQuote} className="animate-in slide-in-from-bottom-4 duration-500">
+              <p className="text-white text-lg sm:text-xl font-bold leading-tight mb-4 italic">
+                "{quotes[currentQuote].text}"
+              </p>
+              <p className="text-indigo-200 text-xs font-black uppercase tracking-widest">
+                — {quotes[currentQuote].author}
+              </p>
+            </div>
 
-        <button onClick={()=>setAppMode('Donation')} className="h-64 bg-white rounded-[3rem] flex flex-col items-center justify-center shadow-[0_20px_50px_rgba(244,63,94,0.1)] border border-slate-100 group active:scale-95 transition-all relative overflow-hidden">
-           <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700"/>
-           <div className="bg-rose-100 w-20 h-20 rounded-[2rem] flex items-center justify-center text-rose-600 relative z-10 mb-4 shadow-inner"><Heart size={36}/></div>
-           <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight relative z-10">Donation</h2>
-        </button>
+            {/* Dots Indicator */}
+            <div className="flex gap-2 mt-6">
+              {quotes.map((_, idx) => (
+                <div 
+                  key={idx} 
+                  className={`h-1 rounded-full transition-all duration-300 ${idx === currentQuote ? 'w-6 bg-white' : 'w-2 bg-white/30'}`} 
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Community Banner */}
-      <div className="px-6 pb-20">
-        <button onClick={()=>setShowCommunity(true)} className="w-full bg-slate-900 rounded-[2.5rem] p-8 flex items-center justify-between shadow-2xl shadow-slate-400 active:scale-95 transition-all relative overflow-hidden group">
-           <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 opacity-90"/>
-           <div className="relative z-10 flex items-center gap-5">
-             <div className="bg-white/10 p-4 rounded-2xl text-indigo-300 backdrop-blur border border-white/5"><Sparkles size={28}/></div>
-             <div className="text-left"><h3 className="text-white font-black text-xl tracking-tight">Community</h3><p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Join the discussion</p></div>
-           </div>
-           <div className="relative z-10 bg-white text-slate-900 p-3 rounded-full shadow-lg group-hover:translate-x-2 transition-transform"><ArrowRight size={20}/></div>
+      {/* 🟢 MAIN ACTION CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12 max-w-3xl mx-auto px-4">
+        
+        {/* Sharing Card */}
+        <button 
+          onClick={() => onSetMode('Sharing')}
+          className="group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:border-indigo-100 transition-all text-center active:scale-95"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110" />
+          <div className="relative z-10 flex flex-col items-center">
+            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-sm">
+              <BookOpen size={32} />
+            </div>
+            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Sharing</h3>
+            <p className="text-xs font-medium text-slate-400 mt-1">Borrow & Read Books</p>
+          </div>
         </button>
+
+        {/* Donation Card */}
+        <button 
+          onClick={() => onSetMode('Donation')}
+          className="group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:border-rose-100 transition-all text-center active:scale-95"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110" />
+          <div className="relative z-10 flex flex-col items-center">
+            <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-sm">
+              <Heart size={32} />
+            </div>
+            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Donation</h3>
+            <p className="text-xs font-medium text-slate-400 mt-1">Give Books for Free</p>
+          </div>
+        </button>
+
       </div>
+
+      {/* 🟢 COMMUNITY BANNER */}
+      <div className="max-w-3xl mx-auto px-4 pb-10">
+        <div 
+          onClick={() => setShowCommunity(true)}
+          className="bg-slate-900 rounded-[2rem] p-6 flex items-center justify-between cursor-pointer group hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 active:scale-[0.98]"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-white/10 rounded-xl text-indigo-400">
+              <MessageSquare size={24} />
+            </div>
+            <div>
+              <h3 className="text-white font-bold">Community Discussion</h3>
+              <p className="text-slate-400 text-xs font-medium tracking-wide uppercase">Join the student circle</p>
+            </div>
+          </div>
+          <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center group-hover:translate-x-1 transition-transform">
+            <ArrowRight className="text-white" size={20} />
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }
