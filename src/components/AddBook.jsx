@@ -8,6 +8,7 @@ export default function AddBook({ onPublish, onClose, categories, classes }) {
   const [isCompressing, setIsCompressing] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
+    author: '',
     category: categories ? categories[0] : 'Other', // Safety check
     bookClass: classes ? classes[0] : 'Other',      // Safety check
     language: 'English',
@@ -112,9 +113,9 @@ export default function AddBook({ onPublish, onClose, categories, classes }) {
             
             <input 
               className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-slate-700 outline-none"
-              placeholder="e.g. written by abc"
-              value={formData.title}
-              onChange={(e) => setFormData({...formData, title: e.target.value})}
+              placeholder="e.g. Author name write here"
+              value={formData.Author}
+              onChange={(e) => setFormData({...formData, author: e.target.value})}
               
             />
           </div>
