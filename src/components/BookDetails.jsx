@@ -1,284 +1,82 @@
+// --- 1. IMPORTS (औज़ार) ---
 import React, { useState } from 'react';
-import { X, User, Phone, ShieldCheck, Trash2, CheckCircle, Clock, AlertCircle, Flag, ScrollText } from 'lucide-react';
+import { X, Trash2, Edit3, Save, Clock, ShieldCheck, CheckCircle, Flag } from 'lucide-react';
+import BookHistory from './BookHistory';
+import * as fb from '../services/firebaseService';
 
-export default function BookDetails({ 
-  book, user, profile, isAdmin, 
-  onClose, onBorrow, onReply, onHandover, onReceive, onDelete, onReport 
-}) {
+export default function BookDetails({ book, user, profile, isAdmin, onClose, onBorrow, onReply, onHandover, onReceive, onDelete, onReport }) {
+  // --- 2. LOCAL STATES (अस्थायी याददाश्त) ---
   const [msg, setMsg] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({ title: book.title, subject: book.subject });
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // 🔥 POWER LOGIC: You are owner if (1) Your ID matches, or (2) You are ADMIN
-  const isOwner = user.uid === book.ownerId || isAdmin;
-  
-  // Check if I (Student) already requested this book
+  // --- 3. LOGIC (नियम: कौन डिलीट कर सकता है) ---
+  const isOriginalOwner = user.uid === book.ownerId;
+  const isTransferred = book.history?.length > 1;
+  const canModify = isAdmin || (isOriginalOwner && !isTransferred);
   const myRequest = book.waitlist?.find(r => r.uid === user.uid);
 
+  // ⏳ 24h Rejection Logic (अगले दिन ही रिक्वेस्ट भेज पाएंगे)
+  let isBlocked = false; let hoursLeft = 0;
+  if (myRequest?.status === 'rejected' && myRequest.rejectionDate) {
+    const diff = (new Date().getTime() - new Date(myRequest.rejectionDate).getTime()) / (1000 * 60 * 60);
+    if (diff < 24) { isBlocked = true; hoursLeft = Math.ceil(24 - diff); }
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      
-      {/* Main Card */}
-      <div className="bg-white w-full max-w-lg rounded-[2rem] overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col relative">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-[2.5rem] overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col relative">
         
-        {/* 1. HEADER IMAGE & CLOSE BUTTON */}
-        <div className="h-40 bg-indigo-600 relative flex items-center justify-center shrink-0">
-          <h1 className="text-3xl font-black text-white/20 uppercase tracking-widest px-8 text-center leading-tight">
-            {book.subject}
-          </h1>
-          
-          <button 
-            onClick={onClose} 
-            className="absolute top-4 right-4 bg-black/20 p-2 rounded-full text-white hover:bg-black/40 transition-colors z-10"
-          >
-            <X size={20} />
-          </button>
-
-          {/* 🚩 REPORT BUTTON (Only for Students, NOT Owner/Admin) */}
-          {!isOwner && !isAdmin && (
-            <button 
-              onClick={() => {
-                const reason = prompt("Why are you reporting this book? (e.g., Fake Content, Abuse)");
-                if (reason) onReport(book, reason);
-              }}
-              className="absolute top-4 left-4 p-2 bg-rose-500/20 hover:bg-rose-600 text-white/90 hover:text-white rounded-full transition-all z-10"
-              title="Report this book"
-            >
-              <Flag size={18} />
-            </button>
-          )}
-
-          {/* Admin Badge */}
-          {isAdmin && (
-            <div className="absolute top-4 left-4 bg-yellow-400 text-black text-[10px] font-black px-2 py-1 rounded-md shadow-lg border border-yellow-500 z-10">
-              ADMIN MODE
-            </div>
-          )}
+        {/* Header & Edit Button */}
+        <div className="h-32 bg-indigo-600 relative flex items-center justify-center">
+          <button onClick={onClose} className="absolute top-4 right-4 bg-black/20 p-2 rounded-full text-white"><X size={20}/></button>
+          {canModify && !isAdmin && <button onClick={() => setIsEditing(!isEditing)} className="absolute top-4 left-4 bg-white/20 p-2 rounded-full text-white">{isEditing ? <X size={18}/> : <Edit3 size={18} />}</button>}
         </div>
 
-        {/* 2. BOOK INFO CONTENT */}
-        <div className="p-6 pt-0 flex-1 overflow-y-auto">
-          
-          {/* Book Icon & Title */}
-          <div className="text-center -mt-12 mb-6 relative z-10">
-            <div className="w-24 h-24 bg-white rounded-2xl mx-auto shadow-xl flex items-center justify-center text-5xl mb-3 border-4 border-white">
-              📚
-            </div>
-            <h2 className="text-2xl font-black text-slate-800 leading-tight">{book.title}</h2>
-            <div className="flex items-center justify-center gap-2 mt-1">
-               <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide">
-                 Class {book.classLevel}
-               </span>
-               <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide">
-                 {book.subject}
-               </span>
-            </div>
-          </div>
-
-          {/* 🟢 SECTION A: OWNER / ADMIN VIEW */}
-          {isOwner && (
-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 animate-in slide-in-from-bottom-4 mb-6">
-              
-              <h3 className="font-black text-slate-700 mb-4 flex items-center gap-2 text-sm uppercase tracking-widest">
-                <User size={16} className="text-indigo-600"/> 
-                Requests ({book.waitlist?.length || 0})
-              </h3>
-              
-              <div className="space-y-3">
-                {(!book.waitlist || book.waitlist.length === 0) && (
-                  <p className="text-xs text-slate-400 text-center py-4 italic">No requests yet.</p>
-                )}
-                
-                {book.waitlist?.map((req, idx) => (
-                  <div key={idx} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm transition-all hover:shadow-md">
-                    
-                    {/* Request Header */}
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm">{req.name}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{req.mobile}</p>
-                        {req.message && <p className="text-[11px] text-slate-500 mt-1 italic">"{req.message}"</p>}
-                      </div>
-                      
-                      <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wide ${
-                        req.status === 'approved' ? 'bg-green-100 text-green-700' : 
-                        req.status === 'handed_over' ? 'bg-indigo-100 text-indigo-700' :
-                        req.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
-                        'bg-orange-100 text-orange-700'
-                      }`}>
-                        {req.status.replace('_', ' ')}
-                      </span>
-                    </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                      {req.status === 'pending' && (
-                        <>
-                          <button onClick={() => onReply(book, req.uid, 'Approved')} className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm">
-                            Approve
-                          </button>
-                          <button onClick={() => onReply(book, req.uid, 'Rejected')} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 rounded-lg transition-colors">
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      
-                      {req.status === 'approved' && (
-                        <button 
-                          onClick={() => onHandover(book, req.uid)} 
-                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
-                        >
-                           <ShieldCheck size={16} /> Mark as Given (Handover)
-                        </button>
-                      )}
-
-                      {req.status === 'handed_over' && (
-                        <div className="w-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold py-2 rounded-lg text-center animate-pulse flex items-center justify-center gap-2">
-                          <Clock size={14}/> Waiting for receiver...
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+        <div className="p-6 pt-0 flex-1">
+          {/* Title & Stats */}
+          <div className="text-center -mt-12 mb-6 relative">
+            <div className="w-24 h-24 bg-white rounded-2xl mx-auto shadow-xl flex items-center justify-center text-5xl mb-3 border-4 border-white">📚</div>
+            {isEditing ? (
+              <div className="space-y-2">
+                <input className="w-full p-2 border-2 border-indigo-100 rounded-lg text-center font-bold" value={editData.title} onChange={e => setEditData({...editData, title: e.target.value})} />
+                <button onClick={async () => { await fb.updateBook(book.id, editData); setIsEditing(false); }} className="bg-green-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase">Save</button>
               </div>
-
-              {/* DELETE BUTTON */}
-              <button 
-                onClick={onDelete} 
-                className="w-full mt-6 bg-white border-2 border-rose-100 text-rose-500 hover:bg-rose-50 hover:border-rose-200 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2"
-              >
-                <Trash2 size={16}/> {isAdmin ? "DELETE BOOK (ADMIN)" : "DELETE MY BOOK"}
-              </button>
-            </div>
-          )}
-
-          {/* 🟢 SECTION B: BORROWER VIEW (Students) */}
-          {!isOwner && (
-            <div className="space-y-4 animate-in slide-in-from-bottom-4 mb-6">
-              
-              {myRequest ? (
-                // --- Request Status View ---
-                <div className={`p-5 rounded-2xl border-2 ${
-                  myRequest.status === 'approved' ? 'bg-green-50 border-green-100' : 
-                  myRequest.status === 'handed_over' ? 'bg-indigo-50 border-indigo-100' :
-                  myRequest.status === 'rejected' ? 'bg-rose-50 border-rose-100' :
-                  'bg-orange-50 border-orange-100'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    {myRequest.status === 'approved' && <CheckCircle size={18} className="text-green-600"/>}
-                    {myRequest.status === 'pending' && <Clock size={18} className="text-orange-600"/>}
-                    {myRequest.status === 'rejected' && <AlertCircle size={18} className="text-rose-600"/>}
-                    
-                    <h3 className="font-black text-slate-800 uppercase tracking-wide text-sm">
-                      Status: {myRequest.status.replace('_', ' ')}
-                    </h3>
-                  </div>
-                  
-                  {myRequest.status === 'pending' && (
-                    <p className="text-xs text-slate-500 font-medium">Waiting for the owner to accept your request.</p>
-                  )}
-                  
-                  {myRequest.status === 'rejected' && (
-                    <p className="text-xs text-rose-500 font-bold">Owner rejected this request. Try another book.</p>
-                  )}
-
-                  {/* Contact Info (Privacy Aware) */}
-                  {myRequest.status === 'approved' && (
-                    <div className="mt-3 bg-white p-3 rounded-xl border border-green-100 shadow-sm">
-                       <p className="text-[10px] text-green-700 font-bold mb-2 uppercase tracking-wide">Owner Agreed! Contact Details:</p>
-                       <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">
-                           <Phone size={14}/>
-                         </div>
-                         <div>
-                           {book.ownerPrivacy && !isAdmin ? (
-                             <>
-                               <p className="text-sm font-black text-slate-800">Contact School Admin</p>
-                               <p className="text-[9px] text-rose-500 font-bold uppercase">Number Hidden by Owner</p>
-                             </>
-                           ) : (
-                             <>
-                               <p className="text-lg font-black text-slate-800 tracking-tight">{book.contact}</p>
-                               <p className="text-[9px] text-slate-400 font-bold uppercase">Mobile Number</p>
-                             </>
-                           )}
-                         </div>
-                       </div>
-                    </div>
-                  )}
-
-                  {/* Receive Button */}
-                  {myRequest.status === 'handed_over' && (
-                    <div className="mt-4">
-                       <p className="text-xs text-indigo-700 font-bold mb-3 text-center">Owner says they gave you the book.</p>
-                       <button 
-                         onClick={() => onReceive(book, { uid: user.uid, name: profile.name, mobile: profile.mobile })}
-                         className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black shadow-xl shadow-indigo-200 animate-bounce flex items-center justify-center gap-2"
-                       >
-                         YES, I RECEIVED IT! <CheckCircle size={18}/>
-                       </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                // --- New Request Form ---
-                <div className="space-y-4">
-                   <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                     <p className="text-xs text-indigo-800 font-medium leading-relaxed">
-                       Write a short message to the owner asking to borrow this book.
-                     </p>
-                   </div>
-                   <textarea 
-                     value={msg} 
-                     onChange={e=>setMsg(e.target.value)} 
-                     placeholder="Example: Can I collect this tomorrow during lunch break?" 
-                     className="w-full bg-slate-50 p-4 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 border-2 border-transparent focus:border-indigo-100 transition-all resize-none"
-                     rows="3"
-                   />
-                   <button 
-                     onClick={() => onBorrow(book, msg)}
-                     disabled={!msg.trim()}
-                     className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-xl font-black uppercase tracking-widest shadow-xl transition-transform active:scale-95"
-                   >
-                     Send Request
-                   </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 📜 NEW: HISTORY SECTION (Timeline) */}
-          <div className="mt-8 pt-6 border-t border-slate-100">
-            <h3 className="font-black text-slate-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
-              <ScrollText size={16} /> Book Journey
-            </h3>
-            
-            <div className="space-y-6 pl-4 border-l-2 border-slate-200 ml-2 relative">
-              {(!book.history || book.history.length === 0) ? (
-                <div className="relative pl-6">
-                  <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white bg-indigo-500 shadow-sm" />
-                  <p className="text-xs font-bold text-slate-700">Uploaded by Owner</p>
-                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">Start of journey</p>
-                </div>
-              ) : (
-                book.history.map((item, index) => (
-                  <div key={index} className="relative pl-6">
-                    {/* Timeline Dot */}
-                    <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm ${
-                      index === book.history.length - 1 ? 'bg-indigo-600 animate-pulse' : 'bg-slate-300'
-                    }`} />
-                    
-                    <p className="text-xs font-bold text-slate-800 leading-tight">
-                      {item.action} 
-                      {item.owner && <span className="text-indigo-600 block mt-0.5">by {item.owner}</span>}
-                    </p>
-                    <p className="text-[10px] text-slate-400 font-bold mt-1 bg-slate-50 inline-block px-2 py-0.5 rounded-md">
-                      {item.date}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
+            ) : ( <h2 className="text-2xl font-black text-slate-800">{book.title}</h2> )}
           </div>
 
+          {/* Owner/Borrower Logic (क्या डिलीट कर सकते हैं?) */}
+          {user.uid === book.ownerId || isAdmin ? (
+            <div className="bg-slate-50 p-5 rounded-2xl border mb-6">
+              {book.waitlist?.map((req, i) => (
+                <div key={i} className="bg-white p-3 rounded-xl mb-2 shadow-sm border">
+                  <p className="font-bold text-sm">{req.name}</p>
+                  {req.status === 'pending' && <div className="flex gap-2 mt-2"><button onClick={() => onReply(book, req.uid, 'Approved')} className="bg-green-600 text-white text-[10px] px-3 py-2 rounded-lg font-bold">Approve</button><button onClick={() => onReply(book, req.uid, 'Rejected')} className="bg-slate-100 text-slate-600 text-[10px] px-3 py-2 rounded-lg font-bold">Reject</button></div>}
+                  {req.status === 'approved' && <button disabled={isProcessing} onClick={async () => { setIsProcessing(true); await onHandover(book, req.uid); setIsProcessing(false); }} className="w-full bg-indigo-600 text-white text-[10px] py-2 rounded-lg font-bold mt-2">{isProcessing ? 'Processing...' : 'Mark as Given'}</button>}
+                </div>
+              ))}
+              {canModify ? <button onClick={onDelete} className="w-full mt-4 bg-rose-50 text-rose-600 py-3 rounded-xl font-black text-[10px] border border-rose-100 flex items-center gap-2 justify-center"><Trash2 size={14}/> DELETE BOOK</button> : <p className="text-[10px] text-amber-600 font-bold text-center mt-4 bg-amber-50 p-2 rounded-lg">Only first owner can delete before transfer.</p>}
+            </div>
+          ) : (
+            <div className="mb-6">
+              {myRequest ? (
+                <div className="p-4 bg-slate-50 rounded-xl border-2 text-center">
+                  <p className="font-black text-slate-800 uppercase text-xs">Status: {myRequest.status}</p>
+                  {myRequest.status === 'handed_over' && <button disabled={isProcessing} onClick={async () => { setIsProcessing(true); await onReceive(book, { uid: user.uid, name: profile.name, mobile: profile.mobile }); setIsProcessing(false); }} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black mt-3">{isProcessing ? 'Saving...' : 'I RECEIVED IT'}</button>}
+                </div>
+              ) : isBlocked ? (
+                <div className="bg-rose-50 p-4 rounded-xl border border-rose-100 text-center"><p className="text-rose-600 text-[10px] font-black uppercase tracking-widest">Retry in {hoursLeft}h</p></div>
+              ) : (
+                <div className="space-y-3">
+                  <textarea value={msg} onChange={e => setMsg(e.target.value)} placeholder="Message owner..." className="w-full bg-slate-50 p-3 rounded-xl text-sm border-2 border-transparent focus:border-indigo-100" rows="2" />
+                  <button onClick={() => onBorrow(book, msg)} disabled={!msg.trim()} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-xs">Send Request</button>
+                </div>
+              )}
+            </div>
+          )}
+          {/* History Module (इतिहास) */}
+          <BookHistory history={book.history} />
         </div>
       </div>
     </div>
