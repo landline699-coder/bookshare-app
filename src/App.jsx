@@ -26,9 +26,18 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+const [lastSeenComm, setLastSeenComm] = useState(Number(localStorage.getItem('lastSeenComm')) || 0);
 
   const [books, setBooks] = useState([]);
   const [communityPosts, setCommunityPosts] = useState([]);
+  const hasNewComm = communityPosts.length > 0 && 
+                  (communityPosts[0].createdAt?.seconds || 0) > lastSeenComm;
+                  const handleOpenCommunity = () => {
+  const now = Math.floor(Date.now() / 1000);
+  setLastSeenComm(now);
+  localStorage.setItem('lastSeenComm', now);
+  setShowCommunity(true);
+};
   const [reports, setReports] = useState([]); 
   const [allUsers, setAllUsers] = useState([]); 
   const [appMode, setAppMode] = useState(null);
@@ -124,7 +133,24 @@ export default function App() {
       await fb.deleteBook(bookId); setSelectedBook(null); setToast({ type: 'success', message: 'Deleted!' });
     }
   };
-
+// --- 🚩 COMMUNITY REPORT HANDLER ---
+const handleReportPost = async (post, reason) => {
+  try {
+    await fb.addReport({
+      type: 'community_post',
+      postId: post.id,
+      postContent: post.text,
+      postAuthor: post.userName,
+      reporterName: profile.name,
+      reporterUid: user.uid,
+      reason: reason,
+      createdAt: new Date()
+    });
+    setToast({ type: 'success', message: 'Reported to Admin! 🛡️' });
+  } catch (e) {
+    setToast({ type: 'error', message: 'Failed to report.' });
+  }
+};
   // 🤝 Handover & Receive Flow
   const handleHandover = async (book, rUid) => {
     const updated = book.waitlist.map(r => r.uid === rUid ? { ...r, status: 'handed_over' } : r);
@@ -153,7 +179,8 @@ export default function App() {
 
       <Navbar 
         profile={profile} onOpenProfile={() => setShowProfile(true)} onOpenAdmin={() => setShowAdminLogin(true)}
-        notifications={notifications} totalRequests={totalCount} onOpenCommunity={() => setShowCommunity(true)} onLogout={fb.logoutUser}
+        notifications={notifications} totalRequests={totalCount}hasNewComm={hasNewComm} 
+  onOpenCommunity={handleOpenCommunity}  onLogout={fb.logoutUser}
       />
 
       <main className="flex-1 overflow-y-auto pb-32 pt-20 px-4">

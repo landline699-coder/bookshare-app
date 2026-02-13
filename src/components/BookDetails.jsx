@@ -116,23 +116,60 @@ export default function BookDetails({
               {canDelete ? <button onClick={onDelete} className="w-full mt-6 bg-white border-2 border-rose-100 text-rose-500 py-3 rounded-xl font-black text-[10px] flex items-center justify-center gap-2 uppercase"><Trash2 size={16}/> DELETE BOOK</button> : <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100 text-center text-[10px] text-amber-700 font-bold uppercase">Only first owner can delete before transfer.</div>}
             </div>
           ) : (
-            <div className="mb-6">
-              {myRequest ? (
-                <div className="p-5 rounded-2xl border-2 bg-indigo-50 border-indigo-100 text-center">
-                  <p className="font-black text-indigo-800 text-sm uppercase">Status: {myRequest.status}</p>
-                  {myRequest.status === 'handed_over' && <button disabled={isProcessing} onClick={async () => { setIsProcessing(true); await onReceive(book, { uid: user.uid, name: profile.name, mobile: profile.mobile }); setIsProcessing(false); }} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black mt-4 shadow-xl active:scale-95 transition-all">I RECEIVED IT</button>}
-                </div>
-              ) : isBlocked ? (
-                <div className="bg-rose-50 border-2 border-rose-100 p-6 rounded-2xl text-center">
-                  <Clock className="mx-auto mb-2 text-rose-500" size={24} />
-                  <p className="text-[11px] text-rose-600 font-bold uppercase tracking-widest leading-relaxed">Request Locked: Retry in {hoursLeft}h</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <textarea value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Why do you need this book?" className="w-full bg-slate-50 p-4 rounded-xl text-sm font-bold border-2 focus:border-indigo-100 outline-none" rows="3" />
-                  <button onClick={() => onBorrow(book, msg)} disabled={!msg.trim()} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase tracking-widest shadow-xl">Send Request</button>
-                </div>
-              )}
+            /* --- 📨 BORROWER VIEW (एक ही साफ़ सुथरा हिस्सा) --- */
+            <div className="space-y-4 mb-6">
+              {(() => {
+                // 1. अगर अभी 24 घंटे पूरे नहीं हुए (Blocked है)
+                if (isBlocked) {
+                  return (
+                    <div className="bg-rose-50 border-2 border-rose-100 p-6 rounded-2xl text-center animate-in fade-in">
+                      <Clock className="mx-auto mb-2 text-rose-500" size={24} />
+                      <p className="text-sm font-black text-rose-900 uppercase">Request Locked</p>
+                      <p className="text-[11px] text-rose-600 font-bold mt-1">
+                        Try again in <span className="underline">{hoursLeft} hours</span>.
+                      </p>
+                    </div>
+                  );
+                }
+
+                // 2. अगर कोई पुरानी रिक्वेस्ट नहीं है (Fresh Request)
+                if (!myRequest) {
+                  return (
+                    <div className="space-y-4 animate-in slide-in-from-bottom-2">
+                      <textarea 
+                        value={msg} onChange={e=>setMsg(e.target.value)} 
+                        placeholder="Why do you need this book?" 
+                        className="w-full bg-slate-50 p-4 rounded-xl text-sm font-bold border-2 focus:border-indigo-100 outline-none" 
+                        rows="3" 
+                      />
+                      <button 
+                        onClick={() => onBorrow(book, msg)} 
+                        disabled={!msg.trim()} 
+                        className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase shadow-xl active:scale-95 transition-all"
+                      >
+                        Send Request
+                      </button>
+                    </div>
+                  );
+                }
+
+                // 3. अगर रिक्वेस्ट पेंडिंग, अप्रूव्ड या हैंडओवर मोड में है
+                return (
+                  <div className="p-5 rounded-2xl border-2 bg-indigo-50 border-indigo-100 text-center">
+                    <p className="font-black text-indigo-800 text-sm uppercase">Status: {myRequest.status.replace('_', ' ')}</p>
+                    {/* अगर मालिक ने किताब दे दी है, तो 'I RECEIVED IT' बटन दिखाओ */}
+                    {myRequest.status === 'handed_over' && (
+                      <button 
+                        disabled={isProcessing} 
+                        onClick={async () => { setIsProcessing(true); await onReceive(book, { uid: user.uid, name: profile.name, mobile: profile.mobile }); setIsProcessing(false); }} 
+                        className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black mt-4 shadow-xl active:scale-95 transition-all"
+                      >
+                        {isProcessing ? 'Saving...' : 'I RECEIVED IT'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

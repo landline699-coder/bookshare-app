@@ -1,11 +1,13 @@
+// --- 1. IMPORTS (औज़ार) ---
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, User, Trash2 } from 'lucide-react'; // 👈 Trash2 import kiya
+// हमने यहाँ Flag आइकॉन को जोड़ दिया है
+import { X, Send, User, Trash2, Flag } from 'lucide-react';
 
-export default function Community({ posts, profile, onClose, onPost, isAdmin, onDeletePost }) {
+export default function Community({ posts, profile, onClose, onPost, isAdmin, onDeletePost, onReportPost }) {
   const [text, setText] = useState('');
   const scrollRef = useRef(null);
 
-  // Auto-scroll to bottom when new post arrives
+  // Auto-scroll to bottom logic (सुरक्षित है)
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -22,7 +24,7 @@ export default function Community({ posts, profile, onClose, onPost, isAdmin, on
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
       <div className="bg-white w-full max-w-lg h-[80vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden relative">
         
-        {/* Header */}
+        {/* Header (सुरक्षित है) */}
         <div className="bg-indigo-600 p-4 flex justify-between items-center z-10">
           <div className="text-white">
             <h2 className="text-xl font-black tracking-tight">Community Chat</h2>
@@ -47,7 +49,7 @@ export default function Community({ posts, profile, onClose, onPost, isAdmin, on
             posts.map((post) => (
               <div key={post.id} className="relative group bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
                 
-                {/* 🛡️ ADMIN DELETE BUTTON (Sirf Admin ko dikhega) */}
+                {/* 🛡️ ADMIN DELETE BUTTON */}
                 {isAdmin && (
                   <button 
                     onClick={() => onDeletePost(post.id)}
@@ -58,7 +60,21 @@ export default function Community({ posts, profile, onClose, onPost, isAdmin, on
                   </button>
                 )}
 
-                {/* Author Info */}
+                {/* 🚩 NEW: REPORT BUTTON (सिर्फ दूसरों के मैसेज पर दिखेगा) */}
+                {post.author !== profile.name && (
+                  <button 
+                    onClick={() => {
+                      const reason = window.prompt("Why are you reporting this message? (Abuse/Spam/Other)");
+                      if (reason) onReportPost(post, reason);
+                    }}
+                    className={`absolute top-2 ${isAdmin ? 'right-10' : 'right-2'} p-2 text-slate-300 hover:text-amber-500 transition-all opacity-0 group-hover:opacity-100`}
+                    title="Report Message"
+                  >
+                    <Flag size={14} />
+                  </button>
+                )}
+
+                {/* Author Info (सुरक्षित है) */}
                 <div className="flex items-center gap-2 mb-2">
                    <div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
                       <User size={12} />
@@ -69,12 +85,12 @@ export default function Community({ posts, profile, onClose, onPost, isAdmin, on
                    </span>
                 </div>
 
-                {/* Message Text */}
+                {/* Message Text (सुरक्षित है) */}
                 <p className="text-slate-600 text-sm leading-relaxed font-medium pl-8">
                   {post.text}
                 </p>
                 
-                {/* Time (Optional) */}
+                {/* Time Display */}
                 {post.timestamp && (
                   <p className="text-[9px] text-slate-300 font-bold text-right mt-2">
                     {new Date(post.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -85,7 +101,7 @@ export default function Community({ posts, profile, onClose, onPost, isAdmin, on
           )}
         </div>
 
-        {/* Input Area */}
+        {/* Input Area (सुरक्षित है) */}
         <div className="p-4 bg-white border-t border-slate-100">
           <div className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl border border-slate-200 focus-within:border-indigo-300 focus-within:ring-4 ring-indigo-500/10 transition-all">
             <input 
