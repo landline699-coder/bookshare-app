@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as fb from './services/firebaseService';
 import { CLASSES, CATEGORIES } from './config/constants';
 import useNotifications from './hooks/useNotifications';
+import useBorrowSystem from './hooks/useBorrowSystem'; // 👈 आपका नया लॉजिक मॉड्यूल
 import { AlertTriangle, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx'; 
 
@@ -26,18 +27,10 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-const [lastSeenComm, setLastSeenComm] = useState(Number(localStorage.getItem('lastSeenComm')) || 0);
+  const [lastSeenComm, setLastSeenComm] = useState(Number(localStorage.getItem('lastSeenComm')) || 0);
 
   const [books, setBooks] = useState([]);
   const [communityPosts, setCommunityPosts] = useState([]);
-  const hasNewComm = communityPosts.length > 0 && 
-                  (communityPosts[0].createdAt?.seconds || 0) > lastSeenComm;
-                  const handleOpenCommunity = () => {
-  const now = Math.floor(Date.now() / 1000);
-  setLastSeenComm(now);
-  localStorage.setItem('lastSeenComm', now);
-  setShowCommunity(true);
-};
   const [reports, setReports] = useState([]); 
   const [allUsers, setAllUsers] = useState([]); 
   const [appMode, setAppMode] = useState(null);
@@ -51,28 +44,26 @@ const [lastSeenComm, setLastSeenComm] = useState(Number(localStorage.getItem('la
   const [searchTerm, setSearchTerm] = useState('');
   const [toast, setToast] = useState(null);
 
+  // --- 3. MODULAR LOGIC (Using Hooks) ---
   const { notifications, totalCount } = useNotifications(books, user, profile);
+  // बुक अप्रूवल का सारा "दिमाग" अब यहाँ है 👇
+  const { handleReply, handleHandover, handleReceive, isProcessing } = useBorrowSystem(setToast);
 
-  // --- 3. LIVE LISTENERS ---
+  const hasNewComm = communityPosts.length > 0 && (communityPosts[0].createdAt?.seconds || 0) > lastSeenComm;
+
+  // --- 4. LIVE LISTENERS (Firebase Sync) ---
   useEffect(() => {
     let unsubProfile = null;
     const unsubAuth = fb.subscribeToAuth((u) => {
       if (u) {
         setUser(u);
-        if (unsubProfile) unsubProfile();
         unsubProfile = fb.subscribeToUserProfile(u.uid, (p) => {
-          if (p) {
-            setProfile(p);
-            localStorage.setItem('userProfile', JSON.stringify(p));
-          } else {
-            fb.logoutUser(); setUser(null); setProfile(null);
-          }
+          if (p) { setProfile(p); } 
+          else { fb.logoutUser(); }
           setIsDataLoaded(true);
         });
       } else {
-        setUser(null); setProfile(null); setIsAdmin(false);
-        if(unsubProfile) unsubProfile();
-        setIsDataLoaded(true);
+        setUser(null); setProfile(null); setIsAdmin(false); setIsDataLoaded(true);
       }
     });
 
@@ -81,147 +72,67 @@ const [lastSeenComm, setLastSeenComm] = useState(Number(localStorage.getItem('la
     const unsubReports = fb.subscribeToReports(setReports);
     const unsubUsers = fb.subscribeToAllUsers(setAllUsers);
 
-    return () => { 
-      unsubAuth(); if(unsubProfile) unsubProfile(); 
-      unsubBooks(); unsubComm(); unsubReports(); unsubUsers();
-    };
+    return () => { unsubAuth(); if(unsubProfile) unsubProfile(); unsubBooks(); unsubComm(); unsubReports(); unsubUsers(); };
   }, []);
 
-  // --- 4. CALCULATIONS (Profile Stats) ---
-  const userStats = {
-    shared: books.filter(b => b.ownerId === user?.uid && (b.history || []).length <= 1).length,
-    borrowed: books.filter(b => b.ownerId === user?.uid && (b.history || []).length > 1).length
+  // --- 5. SIMPLE HANDLERS ---
+  const handleOpenCommunity = () => {
+    const now = Math.floor(Date.now() / 1000);
+    setLastSeenComm(now);
+    localStorage.setItem('lastSeenComm', now);
+    setShowCommunity(true);
   };
 
-  // --- 5. HANDLERS (All Key Features) ---
-  
-  // 📥 Excel Feature (Books + Students Directory)
-  const handleExportData = () => {
-    const booksData = books.map(b => ({
-      Title: b.title, Author: b.author || '-', Subject: b.subject, Class: b.classLevel, Owner: b.currentOwner, Status: b.handoverStatus
-    }));
-    const usersData = allUsers.map(u => ({
-      Name: u.name, Mobile: u.mobile, Class: u.studentClass, Joined: u.createdAt ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : '-'
-    }));
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(booksData), "All Books");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(usersData), "Student Directory");
-    XLSX.writeFile(wb, "School_BookShare_Admin_Data.xlsx");
-    setToast({ type: 'success', message: 'Excel Downloaded! 📥' });
+  const handleReportPost = async (post, reason) => {
+    await fb.addReport({ type: 'community_post', postId: post.id, postContent: post.text, postAuthor: post.author, reporterName: profile.name, reason });
+    setToast({ type: 'success', message: 'Reported!' });
   };
 
-  // 📝 Update Feature (Title/Subject/Author)
-  const handleReply = async (book, uid, txt, extraData) => {
-    if (txt === 'UPDATE') {
-      await fb.updateBook(book.id, { 
-        title: extraData.title, 
-        subject: extraData.subject,
-        author: extraData.author 
-      });
-      setToast({ type: 'success', message: 'Details Updated!' });
-      return;
-    }
-    const status = txt.includes('Approved') ? 'approved' : 'rejected';
-    const updated = book.waitlist.map(r => r.uid === uid ? { ...r, status, rejectionDate: status === 'rejected' ? new Date().toISOString() : null } : r);
-    await fb.updateBook(book.id, { waitlist: updated });
-  };
-
-  // 🗑️ Delete Feature
-  const handleDeleteBook = async (bookId) => {
-    if (window.confirm("Delete this book?")) {
-      await fb.deleteBook(bookId); setSelectedBook(null); setToast({ type: 'success', message: 'Deleted!' });
-    }
-  };
-// --- 🚩 COMMUNITY REPORT HANDLER ---
-const handleReportPost = async (post, reason) => {
-  try {
-    await fb.addReport({
-      type: 'community_post',
-      postId: post.id,
-      postContent: post.text,
-      postAuthor: post.userName,
-      reporterName: profile.name,
-      reporterUid: user.uid,
-      reason: reason,
-      createdAt: new Date()
-    });
-    setToast({ type: 'success', message: 'Reported to Admin! 🛡️' });
-  } catch (e) {
-    setToast({ type: 'error', message: 'Failed to report.' });
-  }
-};
-  // 🤝 Handover & Receive Flow
-  const handleHandover = async (book, rUid) => {
-    const updated = book.waitlist.map(r => r.uid === rUid ? { ...r, status: 'handed_over' } : r);
-    await fb.updateBook(book.id, { waitlist: updated });
-    setToast({ type: 'success', message: 'Handover Marked' });
-  };
-
-  const handleReceive = async (book, req) => {
-    await fb.updateBook(book.id, {
-      ownerId: req.uid, currentOwner: req.name, contact: req.mobile,        
-      handoverStatus: 'available', waitlist: [],                   
-      history: [...(book.history || []), { owner: req.name, date: new Date().toLocaleDateString(), action: `Received` }]
-    });
-    setSelectedBook(null); setToast({ type: 'success', message: 'Book Received!' });
-  };
-
-  // --- 6. RENDER ---
   if (!isDataLoaded) return <LoadingScreen />;
   if (!user) return <Auth />;
-  if (user && !profile) return <GlobalLoader message="Syncing Profile..." />;
 
   return (
     <div className="fixed inset-0 bg-slate-50 flex flex-col overflow-hidden">
       <Toast toast={toast} onClose={() => setToast(null)} />
       {isSyncing && <GlobalLoader message="Processing..." />}
 
-      <Navbar 
-        profile={profile} onOpenProfile={() => setShowProfile(true)} onOpenAdmin={() => setShowAdminLogin(true)}
-        notifications={notifications} totalRequests={totalCount}hasNewComm={hasNewComm} 
-  onOpenCommunity={handleOpenCommunity}  onLogout={fb.logoutUser}
-      />
+      <Navbar profile={profile} onOpenProfile={() => setShowProfile(true)} onOpenAdmin={() => setShowAdminLogin(true)} notifications={notifications} totalRequests={totalCount} hasNewComm={hasNewComm} onOpenCommunity={handleOpenCommunity} onLogout={fb.logoutUser} />
 
       <main className="flex-1 overflow-y-auto pb-32 pt-20 px-4">
         {!appMode && !searchTerm ? (
-           <LandingPage profile={profile} onSetMode={setAppMode} onSearch={setSearchTerm} setShowCommunity={setShowCommunity} setShowProfile={setShowProfile} />
+          <LandingPage profile={profile} onSetMode={setAppMode} onSearch={setSearchTerm} setShowCommunity={setShowCommunity} setShowProfile={setShowProfile} />
         ) : (
-           <>
-             <button onClick={() => { setAppMode(null); setSearchTerm(''); }} className="mb-4 text-indigo-600 font-bold flex items-center gap-1">← Back</button>
-             <BookGrid books={books} appMode={appMode} searchTerm={searchTerm} categories={CATEGORIES} onSelectBook={setSelectedBook} />
-           </>
+          <BookGrid books={books} appMode={appMode} searchTerm={searchTerm} categories={CATEGORIES} onSelectBook={setSelectedBook} />
         )}
       </main>
 
-      {/* POPUPS & MODALS */}
+      {/* 📖 BOOK DETAILS MODAL */}
       {selectedBook && (
         <BookDetails 
-          book={selectedBook} user={user} profile={profile} classes={CLASSES} isAdmin={isAdmin} 
-          onClose={() => setSelectedBook(null)} onReply={handleReply} onHandover={handleHandover} 
-          onReceive={handleReceive} onDelete={() => handleDeleteBook(selectedBook.id)}
-          onBorrow={async (b, m) => { await fb.requestBook(b.id, { uid: user.uid, name: profile.name, mobile: profile.mobile, message: m }); setToast({type:'success', message:'Sent'}); }}
-          onReport={(b, r) => fb.addReport({bookId: b.id, bookTitle: b.title, reason: r, reporterName: profile.name})}
+          book={selectedBook} user={user} profile={profile} isAdmin={isAdmin} onClose={() => setSelectedBook(null)}
+          // ये फंक्शन्स अब hook से आ रहे हैं 👇
+          onReply={handleReply} 
+          onHandover={handleHandover} 
+          onReceive={handleReceive} 
+          isProcessing={isProcessing}
+          onDelete={() => fb.deleteBook(selectedBook.id)}
+          onBorrow={async (b, m) => { 
+            await fb.requestBook(b.id, { uid: user.uid, name: profile.name, mobile: profile.mobile, message: m, status: 'pending', date: new Date().toISOString() }); 
+            setToast({type:'success', message:'Request Sent! 🚀'}); 
+          }}
         />
       )}
 
-      {isAddingBook && <AddBook mode={appMode} user={user} profile={profile} classes={CLASSES} categories={CATEGORIES} onClose={() => setIsAddingBook(false)} onPublish={async (d) => { setIsSyncing(true); await fb.addBook(d, user, profile, appMode); setIsAddingBook(false); setIsSyncing(false); setToast({type:'success', message:'Published!'}); }} />}
-      {showCommunity && <Community posts={communityPosts} profile={profile} onClose={() => setShowCommunity(false)} onPost={(t) => fb.postToCommunity(profile, t)} isAdmin={isAdmin} onDeletePost={fb.deleteCommunityPost}/>}
-      {showProfile && <ProfileSettings profile={profile} stats={userStats} onClose={() => setShowProfile(false)} onLogout={fb.logoutUser} onUpdate={async (p) => { await fb.updateProfile(user.uid, p); setProfile(p); setShowProfile(false); }} />}
+      {/* OTHER POPUPS (Modular & Clean) */}
+      {isAddingBook && <AddBook mode={appMode} user={user} profile={profile} classes={CLASSES} categories={CATEGORIES} onClose={() => setIsAddingBook(false)} onPublish={async (d) => { setIsSyncing(true); await fb.addBook(d, user, profile, appMode); setIsAddingBook(false); setIsSyncing(false); }} />}
+      {showCommunity && <Community posts={communityPosts} profile={profile} onClose={() => setShowCommunity(false)} onPost={(t) => fb.postToCommunity(profile, t)} isAdmin={isAdmin} onDeletePost={fb.deleteCommunityPost} onReportPost={handleReportPost}/>}
+      {showProfile && <ProfileSettings profile={profile} stats={{shared: 0, borrowed: 0}} onClose={() => setShowProfile(false)} onLogout={fb.logoutUser} onUpdate={async (p) => { await fb.updateProfile(user.uid, p); setProfile(p); }} />}
       {showAdminLogin && <AdminLogin onClose={() => setShowAdminLogin(false)} onLogin={setIsAdmin} />}
-      {showReports && <AdminReports reports={reports} onClose={() => setShowReports(false)} onResolve={fb.deleteReport} onExport={handleExportData} onDeleteBook={async (bid, rid) => { await fb.deleteBook(bid); await fb.deleteReport(rid); }} />}
+      {showReports && <AdminReports reports={reports} onClose={() => setShowReports(false)} onResolve={fb.deleteReport} onDeleteBook={fb.deleteBook} />}
 
-      {/* FLOATING BUTTONS */}
+      {/* FLOATING ACTION BUTTON */}
       {appMode && !isAddingBook && !selectedBook && (
-        <button onClick={() => setIsAddingBook(true)} className="fixed bottom-8 right-6 bg-slate-900 text-white w-16 h-16 rounded-full shadow-2xl z-40 flex items-center justify-center transition-transform hover:scale-110 active:scale-95"><Plus size={32} /></button>
-      )}
-
-      {isAdmin && (
-        <button onClick={() => setShowReports(true)} className="fixed bottom-28 right-8 bg-indigo-600 text-white p-4 rounded-full shadow-2xl z-50 flex items-center gap-2 border-4 border-white">
-          <AlertTriangle size={24}/>
-          <span className="font-black text-xs uppercase">Admin Data</span>
-          {reports.length > 0 && <span className="absolute -top-2 -right-2 bg-rose-600 text-white text-xs font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white animate-bounce">{reports.length}</span>}
-        </button>
+        <button onClick={() => setIsAddingBook(true)} className="fixed bottom-8 right-6 bg-slate-900 text-white w-16 h-16 rounded-full shadow-2xl z-40 flex items-center justify-center transition-transform hover:scale-110"><Plus size={32} /></button>
       )}
     </div>
   );
